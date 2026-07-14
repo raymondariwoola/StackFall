@@ -317,6 +317,11 @@ if fonts are self-hosted later. Keep the game fully usable without the CDN.
   works in every mode (unchanged). “Moving platforms” from the example were
   realized as the seeded swing-speed gusts; literal drifting stacks were omitted
   as they'd break landing geometry unfairly.
+  - For the hardcore difficulty, I don't see enough things to make it more challenging or annoying. The current changes are good, but I would suggest adding a few more elements to increase the difficulty and make it more engaging for players who are looking for a real challenge. Here are some ideas:
+    - Add a time limit for each drop, forcing players to make quick decisions and increasing the pressure.
+    - Include obstacles or hazards that can appear on the tower, requiring players to navigate around them while stacking blocks.
+    - Consider adding a screen shake effect randomly when a block lands, making it more difficult to see the next drop and adding an element of surprise.
+    - Maybe even a lights out mode where the screen dims or flickers for a few seconds, forcing players to rely on memory and quick reflexes.
 
 ### Competition and retention
 
@@ -344,6 +349,53 @@ if fonts are self-hosted later. Keep the game fully usable without the CDN.
   add `Cache-Control` headers for the daily seed and read-only leaderboard.
 - Add a small Worker test harness covering score validation, name cleaning,
   daily routing, cheat blocking, and concurrent-update behavior.
+
+## UX fixes (user feedback, 2026-07-14)
+
+Reported after playtesting; all fixed and verified in a headless-Chrome harness.
+
+### High: Spacebar does nothing on desktop — ✅ Fixed
+
+Cause: the global `keydown` handler bailed out via `isInteractive(document.activeElement)`
+to avoid double-firing, but after clicking **Start** the launching button keeps
+focus (restoring focus to a non-focusable `<body>` is a no-op), so every
+Space/Enter during play was swallowed. Fix: during a live run Space/Enter now
+*always* drops (and pause→resume), regardless of focus; `start()` also blurs the
+launching button so nothing holds focus during play. On overlays, the focused
+Start/Retry button still activates natively (no `preventDefault`), so keyboard
+start keeps working (`js/main.js`).
+
+### High: A stray tap after a run starts a new game — ✅ Fixed
+
+Cause: `onTap` started a run on any tap while the game-over overlay was up, so
+reaching for **Share** could launch a new game by accident. Fix: `onTap` now only
+drops (running) or resumes (paused); a run can be started **only** from the
+Start/Retry button. The background "tap anywhere" start (and the background-space
+start) were removed, and the game-over hint now reads "Press Retry to play again"
+(`js/main.js`, `index.html`).
+
+### Medium: Mode/difficulty toggles don't look interactive — ✅ Fixed
+
+The two ghost buttons read like static labels. They now render "Label · Value ⇄"
+(e.g. `Mode · Endless ⇄`, `Level · Hardcore ⇄`) with a switch icon and a styled
+value, plus an `aria-label` ("… Activate to switch.") so their toggling nature is
+obvious to sighted and assistive-tech users alike (`js/ui.js`, `css/styles.css`).
+
+### Medium: "Daily Board" vs "Endless" is unexplained — ✅ Fixed
+
+A contextual description line under the toggles now explains the selected mode
+("Endless: play any time. Your best goes on the all-time board." /
+"Daily: one shared tower everyone plays today. Resets at UTC midnight."), updating
+live with the toggle. The first-run tutorial also mentions the mode and difficulty
+choices (`js/ui.js`, `index.html`).
+
+### Low: No audio feedback on button presses — ✅ Fixed
+
+Added procedural UI sounds to the audio engine (`blip` for presses, a two-note
+`toggle` for mode/difficulty switches) and wired them into every button — start,
+retry, share, mode, difficulty, pause/resume, settings, board tabs, and tutorial —
+priming/resuming the `AudioContext` on the gesture. Sounds honor the existing mute
+(🔊) toggle (`js/audio.js`, `js/main.js`, `js/ui.js`).
 
 ## Suggested implementation order
 

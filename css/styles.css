@@ -492,9 +492,35 @@ canvas{ display:block; width:100%; height:100%; position:relative; z-index:0; }
 .settings-actions{ display:flex; }
 
 /* ---------- Mode + difficulty toggle row ---------- */
-.toggle-row{ display:flex; gap: 10px; justify-content:center; margin-top: 12px; }
-.toggle-row .ghost-btn{ margin: 0; flex: 1; max-width: 150px; }
-#difficulty-btn.hardcore{ color: var(--coral); border-color: rgba(255,107,107,0.5); }
+.toggle-row{ display:flex; gap: 10px; justify-content:center; margin-top: 14px; }
+.toggle-row .ghost-btn{ margin: 0; flex: 1; max-width: 160px; }
+/* Toggle buttons read "Label · Value ⇄" so it's obvious they switch on tap. */
+.toggle-btn{
+  display:flex; align-items:center; justify-content:center; gap: 7px;
+  padding: 8px 12px;
+  background: rgba(245,243,236,0.05);
+}
+.toggle-btn .tg-label{
+  font-size: 9px; letter-spacing: 0.14em; text-transform: uppercase;
+  color: var(--ink-dim); opacity: 0.75;
+}
+.toggle-btn .tg-val{
+  font-size: 12px; letter-spacing: 0.04em; text-transform: none;
+  color: var(--ink); font-weight: 600;
+}
+.toggle-btn .tg-ico{ font-size: 13px; color: var(--cyan); line-height: 1; }
+#difficulty-btn.hardcore{ border-color: rgba(255,107,107,0.5); }
+#difficulty-btn.hardcore .tg-val,
+#difficulty-btn.hardcore .tg-ico{ color: var(--coral); }
+
+/* Contextual explanation of the selected mode (Endless vs Daily). */
+.mode-desc{
+  margin-top: 10px;
+  font-size: 11px;
+  line-height: 1.45;
+  color: var(--ink-dim);
+  min-height: 15px;
+}
 
 /* ---------- Daily / difficulty stats strip ---------- */
 .stats-strip{

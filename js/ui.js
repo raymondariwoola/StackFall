@@ -34,7 +34,9 @@ export class UI {
 
     // New: difficulty toggle, daily/difficulty stats strip, settings.
     this.difficultyBtn = document.getElementById('difficulty-btn');
+    this.modeDesc = document.getElementById('mode-desc');
     this.statsStrip = document.getElementById('stats-strip');
+    this._click = () => {};   // click-sound hook, injected by main.js
     this.settingsBtn = document.getElementById('settings-btn');
     this.settingsOverlay = document.getElementById('settings-overlay');
     this.settingsClose = document.getElementById('settings-close');
@@ -48,7 +50,7 @@ export class UI {
     this._remote = { scores: [], myName: '', scope: 'all' };
     this.lbTabs.querySelectorAll('.lb-tab').forEach((btn) => {
       btn.addEventListener('pointerdown', (e) => e.stopPropagation());
-      btn.addEventListener('click', (e) => { e.stopPropagation(); this.selectTab(btn.dataset.tab); });
+      btn.addEventListener('click', (e) => { e.stopPropagation(); this._click(); this.selectTab(btn.dataset.tab); });
     });
 
     // Name field: persist as you type, and don't let taps fall through to
@@ -196,11 +198,26 @@ export class UI {
   }
 
   setSoundIcon(muted){ this.soundBtn.textContent = muted ? '🔇' : '🔊'; }
-  setMode(mode){ this.modeBtn.textContent = mode === 'daily' ? 'Daily Board' : 'Endless'; }
+  setClickSound(fn){ this._click = fn || (() => {}); }
+
+  // The toggle buttons read "Label · Value ⇄" so it's obvious they switch.
+  setMode(mode){
+    const val = mode === 'daily' ? 'Daily' : 'Endless';
+    this.modeBtn.innerHTML =
+      `<span class="tg-label">Mode</span><span class="tg-val">${val}</span><span class="tg-ico" aria-hidden="true">⇄</span>`;
+    this.modeBtn.setAttribute('aria-label', `Game mode: ${val}. Activate to switch.`);
+    if (this.modeDesc){
+      this.modeDesc.textContent = mode === 'daily'
+        ? 'Daily: one shared tower everyone plays today. Resets at UTC midnight.'
+        : 'Endless: play any time. Your best goes on the all-time board.';
+    }
+  }
   setDifficulty(difficulty){
     const hc = difficulty === 'hardcore';
-    this.difficultyBtn.textContent = hc ? 'Hardcore' : 'Normal';
+    this.difficultyBtn.innerHTML =
+      `<span class="tg-label">Level</span><span class="tg-val">${hc ? 'Hardcore' : 'Normal'}</span><span class="tg-ico" aria-hidden="true">⇄</span>`;
     this.difficultyBtn.classList.toggle('hardcore', hc);
+    this.difficultyBtn.setAttribute('aria-label', `Difficulty: ${hc ? 'Hardcore' : 'Normal'}. Activate to switch.`);
   }
 
   // ---------- Settings overlay ----------

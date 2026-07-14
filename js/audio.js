@@ -68,6 +68,14 @@ export class AudioEngine {
   drop(){ this._tone(180, 0.09, { type: 'triangle', vol: 0.16, glideTo: 120 }); }
   cut(){ this._thud(0.32); this._tone(90, 0.12, { type: 'square', vol: 0.10, glideTo: 60 }); }
 
+  // UI feedback: a soft click for button presses…
+  blip(){ this._tone(660, 0.05, { type: 'triangle', vol: 0.12 }); }
+  // …and a brighter two-note sweep for toggles (mode / difficulty switches).
+  toggle(){
+    this._tone(520, 0.06, { type: 'sine', vol: 0.13 });
+    this._tone(760, 0.06, { type: 'sine', vol: 0.10, delay: 0.045 });
+  }
+
   perfect(combo){
     // Climb a semitone per combo step (caps so it never gets shrill).
     const semis = Math.min(combo, 20);

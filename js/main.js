@@ -298,10 +298,14 @@ async function start(){
     ui.hideOverlay();
   }
 
-  // Leaving all overlays for live gameplay — clear any pause and focus trap.
+  // Leaving all overlays for live gameplay — clear any pause and focus trap,
+  // and drop focus from the launching button so keyboard drops aren't swallowed.
   paused = false;
   ui.hidePause();
   clearModal();
+  if (document.activeElement && document.activeElement !== document.body && document.activeElement.blur){
+    document.activeElement.blur();
+  }
 
   runMode = forMode;
   runDifficulty = difficulty;
@@ -339,25 +343,27 @@ document.addEventListener('visibilitychange', () => {
   if (document.hidden) pauseGame();
 });
 
-// ---------- Input: tap anywhere ----------
+// ---------- Input ----------
 function primeAudio(){ audio.init(); audio.resume(); }
 
-// Space/Enter should act on a focused button/input themselves, not also drop.
-function isInteractive(el){
-  return !!el && /^(button|input|select|textarea|a)$/i.test(el.tagName);
+// Short UI feedback sound for button presses / toggles (respects mute).
+function uiSound(kind){
+  audio.init(); audio.resume();
+  if (kind === 'toggle') audio.toggle(); else audio.blip();
 }
 
 function onTap(e){
   if (e.cancelable) e.preventDefault();
-  primeAudio();
   if (paused){
+    primeAudio();
     resumeGame();
   } else if (game.running){
+    primeAudio();
     game.drop();
-  } else if (ui.overlay.classList.contains('show')){
-    // Instant restart / start — zero friction for "one more try".
-    start();
   }
+  // When an overlay is up we deliberately do NOTHING here: a run can only be
+  // started from the Start / Retry button, so a stray tap (e.g. reaching for
+  // Share) can't launch a new game by accident.
 }
 document.getElementById('game-wrap').addEventListener('pointerdown', onTap, { passive: false });
 
@@ -366,33 +372,39 @@ document.getElementById('game-wrap').addEventListener('pointerdown', onTap, { pa
 ui.pauseOverlay.addEventListener('pointerdown', (e) => { e.stopPropagation(); resumeGame(); });
 
 window.addEventListener('keydown', (e) => {
-  // Let a focused control handle its own Space/Enter (avoids double-firing).
-  if ((e.code === 'Space' || e.code === 'Enter') && isInteractive(document.activeElement)) return;
-
   if (e.code === 'Space' || e.code === 'Enter'){
+    // During a live run, Space/Enter ALWAYS drops — never let a lingering button
+    // focus (e.g. the Start button that launched the run) swallow the keypress.
+    if (game.running && !paused){ e.preventDefault(); primeAudio(); game.drop(); return; }
+    if (paused){ e.preventDefault(); primeAudio(); resumeGame(); return; }
+    // Overlay up: let the focused Start / Retry button activate natively (that
+    // IS the CTA). Don't start from here, and don't preventDefault, so the
+    // button's own keyboard activation still fires.
+    return;
+  }
+  if (e.code === 'KeyP' && game.running){
+    // P toggles pause during a run — a keyboard alternative to the button.
     e.preventDefault();
-    primeAudio();
-    if (paused) resumeGame();
-    else if (game.running) game.drop();
-    else if (ui.overlay.classList.contains('show')) start();
-  } else if (e.code === 'KeyP'){
-    // P toggles pause during a run — a keyboard-reachable alternative to the button.
-    if (game.running){ e.preventDefault(); paused ? resumeGame() : pauseGame(); }
+    paused ? resumeGame() : pauseGame();
   }
 });
 
+// Give the board tabs a click sound too (they're wired inside UI).
+ui.setClickSound(() => uiSound('blip'));
+
 // Start button: own handler so it doesn't double-fire with the wrap.
 ui.startBtn.addEventListener('pointerdown', (e) => e.stopPropagation());
-ui.startBtn.addEventListener('click', (e) => { e.stopPropagation(); start(); });
+ui.startBtn.addEventListener('click', (e) => { e.stopPropagation(); uiSound('blip'); start(); });
 
 // Share button (game-over only).
 ui.shareBtn.addEventListener('pointerdown', (e) => e.stopPropagation());
-ui.shareBtn.addEventListener('click', (e) => { e.stopPropagation(); shareRun(); });
+ui.shareBtn.addEventListener('click', (e) => { e.stopPropagation(); uiSound('blip'); shareRun(); });
 
 // Mode toggle (applies to the next run).
 ui.modeBtn.addEventListener('pointerdown', (e) => e.stopPropagation());
 ui.modeBtn.addEventListener('click', (e) => {
   e.stopPropagation();
+  uiSound('toggle');
   mode = mode === 'daily' ? 'endless' : 'daily';
   ui.setMode(mode);
   updateStats();
@@ -405,6 +417,7 @@ ui.modeBtn.addEventListener('click', (e) => {
 ui.difficultyBtn.addEventListener('pointerdown', (e) => e.stopPropagation());
 ui.difficultyBtn.addEventListener('click', (e) => {
   e.stopPropagation();
+  uiSound('toggle');
   difficulty = difficulty === 'hardcore' ? 'normal' : 'hardcore';
   Difficulty.set(difficulty);
   Storage.setDifficulty(difficulty);
@@ -420,18 +433,18 @@ ui.soundBtn.addEventListener('click', (e) => {
   Storage.setMuted(m);
   audio.setMuted(m);
   ui.setSoundIcon(m);
-  if (!m){ audio.init(); audio.resume(); }
+  if (!m){ audio.init(); audio.resume(); audio.blip(); }   // confirm on unmute
 });
 
 // Pause / resume buttons.
 ui.pauseBtn.addEventListener('pointerdown', (e) => e.stopPropagation());
-ui.pauseBtn.addEventListener('click', (e) => { e.stopPropagation(); pauseGame(); });
+ui.pauseBtn.addEventListener('click', (e) => { e.stopPropagation(); uiSound('blip'); pauseGame(); });
 ui.resumeBtn.addEventListener('pointerdown', (e) => e.stopPropagation());
-ui.resumeBtn.addEventListener('click', (e) => { e.stopPropagation(); resumeGame(); });
+ui.resumeBtn.addEventListener('click', (e) => { e.stopPropagation(); uiSound('blip'); resumeGame(); });
 
 // First-run tutorial dismissal — remembered locally so it only shows once.
 ui.tutorialBtn.addEventListener('pointerdown', (e) => e.stopPropagation());
-ui.tutorialBtn.addEventListener('click', (e) => { e.stopPropagation(); dismissTutorial(); });
+ui.tutorialBtn.addEventListener('click', (e) => { e.stopPropagation(); uiSound('blip'); dismissTutorial(); });
 ui.tutorialOverlay.addEventListener('pointerdown', (e) => e.stopPropagation());
 
 // ---------- Settings overlay ----------
@@ -454,9 +467,9 @@ function closeSettings(){
   else clearModal();
 }
 ui.settingsBtn.addEventListener('pointerdown', (e) => e.stopPropagation());
-ui.settingsBtn.addEventListener('click', (e) => { e.stopPropagation(); openSettings(); });
+ui.settingsBtn.addEventListener('click', (e) => { e.stopPropagation(); uiSound('blip'); openSettings(); });
 ui.settingsClose.addEventListener('pointerdown', (e) => e.stopPropagation());
-ui.settingsClose.addEventListener('click', (e) => { e.stopPropagation(); closeSettings(); });
+ui.settingsClose.addEventListener('click', (e) => { e.stopPropagation(); uiSound('blip'); closeSettings(); });
 // Tapping the settings backdrop closes it.
 ui.settingsOverlay.addEventListener('pointerdown', (e) => {
   e.stopPropagation();
