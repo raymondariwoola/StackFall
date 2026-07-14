@@ -5,6 +5,7 @@
 import { CONFIG, blockH, movingY, topScreenY, baseSpeed } from './config.js';
 import { colorForFloor, worldFor, worldIndex } from './palettes.js';
 import { Cheats } from './cheats.js';
+import { Difficulty } from './difficulty.js';
 
 export class Game {
   constructor({ view, effects, audio, haptics, rng, callbacks }){
@@ -16,12 +17,13 @@ export class Game {
     this.cb = callbacks || {};
 
     this.stack = [];             // [{ x, w, floor }]
-    this.moving = null;          // { x, w, dir, speed, floor }
+    this.moving = null;          // { x, w, dir, speed, floor, invisible }
     this.running = false;
     this.paused = false;         // set while the cheat menu is open
     this.overState = false;
     this.score = 0;
     this.combo = 0;
+    this.maxCombo = 0;           // best streak reached this run (for history)
     this.floors = 0;
     this.settle = 0;             // squash animation amount for the top block
     this.baseW = 0;
@@ -29,6 +31,7 @@ export class Game {
     this.topY = 0;
     this.curWorld = 0;
     this.cheated = false;        // true if any cheat affected this run
+    this.t = 0;                  // elapsed run time (drives hardcore flicker)
   }
 
   // A gentle, non-interactive tower for the title screen.
@@ -54,12 +57,14 @@ export class Game {
     this.moving = null;
     this.score = 0;
     this.combo = 0;
+    this.maxCombo = 0;
     this.floors = 0;
     this.settle = 0;
     this.curWorld = 0;
     this.overState = false;
     this.cheated = false;
-    this.baseW = W * CONFIG.BASE_WIDTH_RATIO;
+    this.t = 0;
+    this.baseW = W * Difficulty.get().baseWidthRatio;
     this.stack.push({ x: (W - this.baseW) / 2, w: this.baseW, floor: 0 });
     this._spawnMoving();
     this.running = true;
@@ -67,17 +72,24 @@ export class Game {
 
   _spawnMoving(){
     const { W } = this.view;
+    const diff = Difficulty.get();
     const top = this.stack[this.stack.length - 1];
-    const mult = (Cheats.active && Cheats.speedOverride != null)
+    let mult = (Cheats.active && Cheats.speedOverride != null)
       ? Cheats.speedOverride
-      : Math.min(CONFIG.MAX_SPEED_MULT, 1 + this.floors * CONFIG.SPEED_STEP);
+      : Math.min(diff.maxSpeedMult, 1 + this.floors * diff.speedStep);
     const dir = this.rng.bool() ? 1 : -1;
+    // Hardcore "gust": a deterministic (seeded) per-floor speed jitter so the
+    // swing timing is unpredictable but identical for everyone on a Daily seed.
+    if (diff.gust > 0) mult *= 1 + (this.rng.next() - 0.5) * 2 * diff.gust;
+    const floor = this.stack.length;
     this.moving = {
       x: dir === 1 ? 0 : (W - top.w),
       w: top.w,
       dir,
       speed: baseSpeed(W) * mult,
-      floor: this.stack.length,
+      floor,
+      // Hardcore "invisible floors": the swinging block flickers near-invisible.
+      invisible: diff.invisibleEvery > 0 && floor > 0 && floor % diff.invisibleEvery === 0,
     };
   }
 
@@ -115,7 +127,8 @@ export class Game {
       return;
     }
 
-    const perfectPx = Cheats.on('easyPerfect') ? 1e9 : CONFIG.PERFECT_PX;
+    const diff = Difficulty.get();
+    const perfectPx = Cheats.on('easyPerfect') ? 1e9 : diff.perfectPx;
     const perfect =
       overlapW > 2 &&
       Math.abs(mLeft - tLeft) <= perfectPx &&
@@ -124,13 +137,14 @@ export class Game {
     let newLayer;
     if (perfect){
       this.combo++;
+      if (this.combo > this.maxCombo) this.maxCombo = this.combo;
       // Reward precision: grow the block back toward its base width.
-      let nw = Math.min(this.baseW, top.w + CONFIG.PERFECT_REGEN_PX);
+      let nw = Math.min(this.baseW, top.w + diff.perfectRegenPx);
       let nx = tLeft - (nw - top.w) / 2;
       nx = Math.max(0, Math.min(nx, W - nw));
       newLayer = { x: nx, w: nw, floor };
 
-      const gain = (1 + this.combo) * Cheats.mult();   // streaks snowball the score
+      const gain = (1 + this.combo) * Cheats.mult() * diff.scoreMult;   // streaks snowball the score
       this.score += gain;
 
       const cx = tLeft + top.w / 2;
@@ -146,7 +160,7 @@ export class Game {
       // Cheat: keep the full width — no slice, no thinning, no death.
       newLayer = { x: top.x, w: top.w, floor };
       this.combo = 0;
-      this.score += 1 * Cheats.mult();
+      this.score += 1 * Cheats.mult() * diff.scoreMult;
       this.settle = 0.6;
       this.audio.cut();
       this.haptics.buzz(10);
@@ -156,7 +170,7 @@ export class Game {
       if (mRight > overlapRight) this.effects.addDebris(overlapRight, dropY, mRight - overlapRight, this.bh, color, 60);
       newLayer = { x: overlapLeft, w: overlapW, floor };
       this.combo = 0;
-      this.score += 1 * Cheats.mult();
+      this.score += 1 * Cheats.mult() * diff.scoreMult;
       this.settle = 0.6;
       this.audio.cut();
       this.haptics.buzz(10);
@@ -204,13 +218,14 @@ export class Game {
     this.effects.shakeIt(0.25);
     this.audio.gameOver();
     this.haptics.buzz([0, 40, 60, 80]);
-    if (this.cb.onGameOver) this.cb.onGameOver(this.score, this.floors, this.cheated);
+    if (this.cb.onGameOver) this.cb.onGameOver(this.score, this.floors, this.cheated, this.maxCombo);
   }
 
   update(dt){
     const { W, H } = this.view;
     this.bh = blockH(H);
     this.topY = topScreenY(H);
+    if (this.running && !this.paused) this.t += dt;   // drives the hardcore flicker phase
 
     if (this.running && !this.paused && this.moving){
       this.moving.x += this.moving.dir * this.moving.speed * dt;

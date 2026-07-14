@@ -11,11 +11,23 @@ export const WORLDS = [
   { name: 'Neon',   blocks: ['#FF4D9D','#B14DFF','#4D7CFF','#4DE1FF'], top: '#160B2E', bot: '#2A1150', glow: '#B14DFF' },
 ];
 
+// High-contrast worlds: near-black backgrounds with bright, maximally distinct
+// block colors for low-vision players. Used when the High Contrast setting is on.
+export const HC_WORLDS = [
+  { name: 'Contrast', blocks: ['#FFFFFF','#FFD400','#00E5FF','#FF4081'], top: '#000000', bot: '#0A0A0A', glow: '#FFFFFF' },
+  { name: 'Signal',   blocks: ['#FFEB3B','#00E676','#40C4FF','#FF5252'], top: '#050505', bot: '#121212', glow: '#FFEB3B' },
+];
+
+let ACTIVE = WORLDS;
+// Swap the active world set. Callers should refresh the background afterward
+// (main.js re-applies `background.setWorld(worldFor(0))`).
+export function setHighContrast(on){ ACTIVE = on ? HC_WORLDS : WORLDS; }
+
 export function worldIndex(floor){
-  return Math.floor(floor / CONFIG.WORLD_SIZE) % WORLDS.length;
+  return Math.floor(floor / CONFIG.WORLD_SIZE) % ACTIVE.length;
 }
 export function worldFor(floor){
-  return WORLDS[worldIndex(floor)];
+  return ACTIVE[worldIndex(floor)];
 }
 export function colorForFloor(n){
   const w = worldFor(n);

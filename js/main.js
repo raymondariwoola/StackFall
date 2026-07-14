@@ -12,11 +12,14 @@ import { Haptics } from './haptics.js';
 import { Storage } from './storage.js';
 import { UI } from './ui.js';
 import { RNG } from './rng.js';
-import { worldFor } from './palettes.js';
+import { dailySeedString } from './rng.js';
+import { worldFor, setHighContrast } from './palettes.js';
 import { fetchDailySeed, submitScore, fetchLeaderboard, WORKER_URL } from './leaderboard.js';
 import { Cheats } from './cheats.js';
 import { CheatMenu } from './cheatmenu.js';
 import { announce, trapFocus, prefersReducedMotion } from './a11y.js';
+import { Difficulty } from './difficulty.js';
+import { buildShareCard } from './sharecard.js';
 
 const canvas = document.getElementById('c');
 const ctx = canvas.getContext('2d');
@@ -31,8 +34,10 @@ const rng = new RNG((Date.now() >>> 0) || 1);
 
 let mode = 'endless';      // 'endless' | 'daily' — the mode for the NEXT run
 let runMode = mode;        // the mode captured when the CURRENT run started
+let difficulty = Storage.difficulty();   // 'normal' | 'hardcore' — the NEXT run
+let runDifficulty = difficulty;          // captured when the CURRENT run started
 let overlayTimer = null;
-let lastRun = { score: 0, floors: 0, mode };
+let lastRun = { score: 0, floors: 0, mode, difficulty, streak: 0 };
 let startToken = 0;        // monotonic id: only the latest start() may reset
 let starting = false;      // true while a Daily seed is being fetched
 let paused = false;        // our pause (button/visibility), distinct from cheat pause
@@ -40,12 +45,29 @@ let paused = false;        // our pause (button/visibility), distinct from cheat
 audio.setMuted(Storage.muted());
 ui.setSoundIcon(Storage.muted());
 ui.setMode(mode);
+Difficulty.set(difficulty);
+ui.setDifficulty(difficulty);
 
-// Honor prefers-reduced-motion for the canvas juice (shake/flash), tracked live.
-effects.reduceMotion = prefersReducedMotion();
+// ---------- Settings application (persisted, applied live) ----------
+function applyReducedMotion(){
+  // Effective = OS preference OR the in-app toggle. Drives both the canvas
+  // (shake/flash) and CSS animations (via a root class).
+  const eff = prefersReducedMotion() || Storage.reducedMotion();
+  effects.reduceMotion = eff;
+  document.documentElement.classList.toggle('reduce-motion', eff);
+}
+function applyHighContrast(){
+  setHighContrast(Storage.highContrast());
+  // Refresh the backdrop to the (possibly high-contrast) palette.
+  background.setWorld(worldFor(game && game.running ? game.floors : 0));
+}
+function applyHaptics(){ Haptics.setEnabled(Storage.haptics()); }
+
+applyReducedMotion();
+applyHaptics();
 if (window.matchMedia){
   window.matchMedia('(prefers-reduced-motion: reduce)')
-    .addEventListener('change', (e) => { effects.reduceMotion = e.matches; });
+    .addEventListener('change', applyReducedMotion);
 }
 
 // Modal focus management: only the topmost overlay traps Tab focus at a time.
@@ -63,13 +85,18 @@ const game = new Game({
   callbacks: {
     onScore: (s, combo) => { ui.setScore(s); ui.setCombo(combo); ui.pulseScore(); },
     onWorld: (world) => { background.setWorld(world); },
-    onGameOver: (score, floors, cheated) => {
-      // Capture the mode the run was actually played in — the mode toggle may
-      // change afterwards, so `runMode` (not the live `mode`) is authoritative
-      // for submission, board refresh, and share text.
+    onGameOver: (score, floors, cheated, maxCombo) => {
+      // Capture the mode/difficulty the run was actually played in — the toggles
+      // may change afterwards, so the captured values (not the live ones) are
+      // authoritative for submission, board refresh, history, and share.
       const playedMode = runMode;
-      lastRun = { score, floors, mode: playedMode };
+      const playedDifficulty = runDifficulty;
+      const streak = maxCombo || 0;
+      lastRun = { score, floors, mode: playedMode, difficulty: playedDifficulty, streak };
       Storage.addScore(score);
+      Storage.addRun({ score, floors, mode: playedMode, difficulty: playedDifficulty, streak });
+      if (playedMode === 'daily') Storage.recordDaily(dailySeedString(), score);
+      updateStats();
       // A run can't end while paused, but clear the state defensively.
       paused = false;
       ui.hidePause();
@@ -101,18 +128,50 @@ const cheatMenu = new CheatMenu({
   onClose: () => { game.paused = paused; },
 });
 
-// Share the last run (native share sheet on mobile, clipboard fallback).
+// Share the last run: a Canvas-rendered result card via the Web Share API when
+// possible, a PNG download on desktop, and a text/clipboard fallback otherwise.
 async function shareRun(){
   const url = location.href.split('#')[0];
-  // Use the mode the run was played in, not the (possibly toggled) live mode,
-  // so the shared message can't claim a Daily result for an Endless run.
+  // Use the mode/difficulty the run was played in, not the (possibly toggled)
+  // live values, so the share can't mislabel the result.
   const board = lastRun.mode === 'daily' ? " on today's board" : '';
-  const text = `I stacked ${lastRun.score} pts (${lastRun.floors} floors)${board} in StackFall! Beat that 👉`;
-  if (navigator.share){
-    try { await navigator.share({ title: 'StackFall', text, url }); }
-    catch (e) { /* user dismissed the sheet */ }
-    return;
+  const diffTxt = lastRun.difficulty === 'hardcore' ? ' [Hardcore]' : '';
+  const text = `I stacked ${lastRun.score} pts (${lastRun.floors} floors)${board}${diffTxt} in StackFall! Beat that 👉`;
+
+  // Build the image card (best-effort — never block sharing on it).
+  let file = null;
+  try {
+    const blob = await buildShareCard({
+      score: lastRun.score, floors: lastRun.floors, mode: lastRun.mode,
+      difficulty: lastRun.difficulty, streak: lastRun.streak,
+      name: Storage.name() || 'anon', date: dailySeedString(),
+    });
+    if (blob) file = new File([blob], 'stackfall.png', { type: 'image/png' });
+  } catch (e) { /* fall through to text/url */ }
+
+  // Preferred: native share sheet with the image attached.
+  if (file && navigator.canShare && navigator.canShare({ files: [file] })){
+    try { await navigator.share({ files: [file], text, url }); return; }
+    catch (e) { if (e && e.name === 'AbortError') return; /* else fall through */ }
   }
+  // Next: native share sheet with text only.
+  if (navigator.share){
+    try { await navigator.share({ title: 'StackFall', text, url }); return; }
+    catch (e) { if (e && e.name === 'AbortError') return; /* else fall through */ }
+  }
+  // Desktop / no share sheet: offer the card as a PNG download.
+  if (file){
+    try {
+      const href = URL.createObjectURL(file);
+      const a = document.createElement('a');
+      a.href = href; a.download = 'stackfall.png';
+      document.body.appendChild(a); a.click(); a.remove();
+      setTimeout(() => URL.revokeObjectURL(href), 4000);
+      ui.flashShare('Saved card!');
+      return;
+    } catch (e) { /* fall through to text */ }
+  }
+  // Last resort: copy the text.
   try {
     await navigator.clipboard.writeText(`${text} ${url}`);
     ui.flashShare('Copied!');
@@ -131,9 +190,37 @@ async function refreshRemoteBoard(daily = mode === 'daily'){
     const data = await fetchLeaderboard(daily);
     if (data && Array.isArray(data.scores)){
       ui.renderRemoteScores(data.scores, Storage.name(), data.scope || (daily ? 'daily' : 'all'));
+      ui.enableGlobalTab();   // reveal + default to the Global tab once online
     }
   } catch (e) { /* stay on local board */ }
 }
+
+// ---------- Stats strip (streak / daily best / difficulty best / countdown) ----------
+function timeToNextUtcMidnight(){
+  const now = new Date();
+  const next = Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate() + 1, 0, 0, 0);
+  const ms = Math.max(0, next - now.getTime());
+  const h = Math.floor(ms / 3600000);
+  const m = Math.floor((ms % 3600000) / 60000);
+  const s = Math.floor((ms % 60000) / 1000);
+  const p = (n) => String(n).padStart(2, '0');
+  return `${p(h)}:${p(m)}:${p(s)}`;
+}
+function updateStats(){
+  const dailyStats = Storage.dailyStats();
+  ui.renderStatsStrip({
+    mode,
+    difficulty,
+    diffBest: Storage.bestForDifficulty(difficulty),
+    daily: { best: dailyStats.best, streak: dailyStats.streak },
+    countdown: mode === 'daily' ? timeToNextUtcMidnight() : '',
+  });
+}
+// Live countdown: refresh once a second while the title/game-over panel is up in
+// Daily mode so the "next board" clock ticks down.
+setInterval(() => {
+  if (mode === 'daily' && ui.overlay.classList.contains('show')) updateStats();
+}, 1000);
 
 function resize(){
   view.DPR = Math.min(window.devicePixelRatio || 1, CONFIG.DPR_CAP);
@@ -157,7 +244,8 @@ function dismissTutorial(){
 window.addEventListener('resize', resize);
 resize();
 game.buildDemo();
-background.setWorld(worldFor(0));
+applyHighContrast();    // sets the palette + backdrop (world 0)
+updateStats();          // daily best / streak / difficulty best on the title
 refreshRemoteBoard();   // show global scores on the title screen if online
 
 // Show the tutorial once for new players; returning players go straight to the
@@ -216,12 +304,15 @@ async function start(){
   clearModal();
 
   runMode = forMode;
+  runDifficulty = difficulty;
+  Difficulty.set(difficulty);   // ensure the game reads the intended profile
   ui.setScore(0);
   ui.setCombo(0);
   ui.setPauseButtonVisible(true);
   background.setWorld(worldFor(0));
   game.reset(seed);
-  announce(forMode === 'daily' ? 'Daily run started' : 'Game started');
+  const diffLabel = difficulty === 'hardcore' ? ' hardcore' : '';
+  announce((forMode === 'daily' ? 'Daily' : 'Endless') + diffLabel + ' run started');
 }
 
 // ---------- Pause ----------
@@ -304,9 +395,21 @@ ui.modeBtn.addEventListener('click', (e) => {
   e.stopPropagation();
   mode = mode === 'daily' ? 'endless' : 'daily';
   ui.setMode(mode);
+  updateStats();
   // Show the board for the newly selected competition so the toggle actually
   // changes what the player is comparing against, not just the seed.
   refreshRemoteBoard(mode === 'daily');
+});
+
+// Difficulty toggle (applies to the next run).
+ui.difficultyBtn.addEventListener('pointerdown', (e) => e.stopPropagation());
+ui.difficultyBtn.addEventListener('click', (e) => {
+  e.stopPropagation();
+  difficulty = difficulty === 'hardcore' ? 'normal' : 'hardcore';
+  Difficulty.set(difficulty);
+  Storage.setDifficulty(difficulty);
+  ui.setDifficulty(difficulty);
+  updateStats();
 });
 
 // Sound toggle (usable mid-run).
@@ -330,6 +433,49 @@ ui.resumeBtn.addEventListener('click', (e) => { e.stopPropagation(); resumeGame(
 ui.tutorialBtn.addEventListener('pointerdown', (e) => e.stopPropagation());
 ui.tutorialBtn.addEventListener('click', (e) => { e.stopPropagation(); dismissTutorial(); });
 ui.tutorialOverlay.addEventListener('pointerdown', (e) => e.stopPropagation());
+
+// ---------- Settings overlay ----------
+function openSettings(){
+  ui.syncSettings({
+    highContrast: Storage.highContrast(),
+    reducedMotion: Storage.reducedMotion(),
+    haptics: Storage.haptics(),
+    hapticsSupported: Haptics.supported,
+  });
+  ui.showSettings();
+  game.paused = true;                       // freeze a live run behind the panel
+  setModal(ui.settingsOverlay, ui.settingsClose);
+}
+function closeSettings(){
+  ui.hideSettings();
+  game.paused = paused;                      // restore prior pause state
+  if (ui.overlay.classList.contains('show')) setModal(ui.panel, ui.startBtn);
+  else if (paused) setModal(ui.pauseOverlay, ui.resumeBtn);
+  else clearModal();
+}
+ui.settingsBtn.addEventListener('pointerdown', (e) => e.stopPropagation());
+ui.settingsBtn.addEventListener('click', (e) => { e.stopPropagation(); openSettings(); });
+ui.settingsClose.addEventListener('pointerdown', (e) => e.stopPropagation());
+ui.settingsClose.addEventListener('click', (e) => { e.stopPropagation(); closeSettings(); });
+// Tapping the settings backdrop closes it.
+ui.settingsOverlay.addEventListener('pointerdown', (e) => {
+  e.stopPropagation();
+  if (e.target === ui.settingsOverlay) closeSettings();
+});
+
+ui.setHc.addEventListener('change', () => {
+  Storage.setHighContrast(ui.setHc.checked);
+  applyHighContrast();
+});
+ui.setRm.addEventListener('change', () => {
+  Storage.setReducedMotion(ui.setRm.checked);
+  applyReducedMotion();
+});
+ui.setHaptics.addEventListener('change', () => {
+  Storage.setHaptics(ui.setHaptics.checked);
+  applyHaptics();
+  if (ui.setHaptics.checked) Haptics.buzz(15);   // confirmation buzz
+});
 
 // ---------- Main loop ----------
 let last = 0;

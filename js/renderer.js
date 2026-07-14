@@ -3,6 +3,7 @@
 
 import { CONFIG, topScreenY, movingY, blockH } from './config.js';
 import { colorForFloor } from './palettes.js';
+import { Difficulty } from './difficulty.js';
 
 function roundRectPath(ctx, x, y, w, h, r){
   r = Math.min(r, w / 2, h / 2);
@@ -39,7 +40,8 @@ export class Renderer {
     const gap = CONFIG.GAP, r = CONFIG.RADIUS;
 
     // Faint alignment guides from the top block's edges up to the swinger.
-    if (game.running && game.moving && game.stack.length){
+    // Hardcore hides them to make alignment read-by-eye only.
+    if (game.running && game.moving && game.stack.length && Difficulty.get().guides){
       const top = game.stack[game.stack.length - 1];
       ctx.strokeStyle = 'rgba(245,243,236,0.10)';
       ctx.lineWidth = 1;
@@ -80,12 +82,21 @@ export class Renderer {
     // Debris, particles, rings, and floating text live in world space.
     effects.drawWorld(ctx);
 
-    // The swinging block, with a glow in its own color.
+    // The swinging block, with a glow in its own color. On hardcore "invisible"
+    // floors it flickers: a faint ghost most of the time with brief full blinks,
+    // so it stays technically readable but demands timing and memory.
     if (game.running && game.moving){
       const c = colorForFloor(game.moving.floor);
+      let alpha = 1, glow = 24;
+      if (game.moving.invisible){
+        const blink = Math.floor(game.t * 2.5) % 5 === 0;
+        alpha = blink ? 0.9 : 0.06;
+        glow = blink ? 24 : 0;
+      }
       ctx.save();
+      ctx.globalAlpha = alpha;
       ctx.shadowColor = c;
-      ctx.shadowBlur = 24;
+      ctx.shadowBlur = glow;
       roundRect(ctx, game.moving.x, my, game.moving.w, bh - gap, r, c);
       ctx.restore();
     }

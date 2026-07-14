@@ -4,6 +4,7 @@
 export const Haptics = {
   enabled: true,
   supported: typeof navigator !== 'undefined' && typeof navigator.vibrate === 'function',
+  setEnabled(v){ this.enabled = !!v; },
   buzz(pattern){
     if (this.enabled && this.supported){
       try { navigator.vibrate(pattern); } catch (e) { /* ignore */ }

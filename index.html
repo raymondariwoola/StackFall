@@ -16,6 +16,7 @@
   <canvas id="c"></canvas>
 
   <button id="sound-btn" aria-label="Toggle sound">🔊</button>
+  <button id="settings-btn" aria-label="Settings">⚙️</button>
   <button id="pause-btn" aria-label="Pause game" hidden>⏸</button>
   <div id="cheat-badge" hidden>CHEATS ON</div>
 
@@ -38,10 +39,18 @@
       <input id="name-input" type="text" maxlength="12" placeholder="Your name" autocomplete="off" autocapitalize="off" spellcheck="false" aria-label="Player name">
       <button id="start-btn">Start</button>
       <button id="share-btn" class="ghost-btn" hidden>Share Score</button>
-      <button id="mode-btn" class="ghost-btn">Endless</button>
+      <div class="toggle-row">
+        <button id="mode-btn" class="ghost-btn">Endless</button>
+        <button id="difficulty-btn" class="ghost-btn">Normal</button>
+      </div>
       <div class="kbd-hint">Space / Enter to drop · P to pause</div>
+      <div id="stats-strip" class="stats-strip" hidden></div>
       <div class="lb" id="lb-block">
-        <div class="lb-title">Top Scores</div>
+        <div class="lb-tabs" id="lb-tabs" role="tablist" aria-label="Leaderboards">
+          <button class="lb-tab active" data-tab="best" role="tab">Best</button>
+          <button class="lb-tab" data-tab="history" role="tab">History</button>
+          <button class="lb-tab" data-tab="global" role="tab" hidden>Global</button>
+        </div>
         <div id="lb-list"></div>
       </div>
     </div>
@@ -55,6 +64,23 @@
       <div class="sub">Your tower is safe.</div>
       <button id="resume-btn">Resume</button>
       <div class="kbd-hint">Tap anywhere or press Space to resume</div>
+    </div>
+  </div>
+
+  <!-- Settings: accessibility + input preferences, remembered locally. -->
+  <div id="settings-overlay">
+    <div class="settings-panel" role="dialog" aria-modal="true" aria-labelledby="settings-title">
+      <div class="eyebrow">Settings</div>
+      <h2 id="settings-title">Preferences</h2>
+      <div class="settings-grid">
+        <label class="settings-row"><span>High contrast</span><input type="checkbox" id="set-hc"></label>
+        <label class="settings-row"><span>Reduced motion</span><input type="checkbox" id="set-rm"></label>
+        <label class="settings-row" id="set-haptics-row"><span>Haptics (vibration)</span><input type="checkbox" id="set-haptics"></label>
+      </div>
+      <div class="settings-note">Sound is toggled with the 🔊 button. Difficulty is on the start screen.</div>
+      <div class="settings-actions">
+        <button id="settings-close" class="cheat-btn primary">Done</button>
+      </div>
     </div>
   </div>
 

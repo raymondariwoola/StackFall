@@ -285,14 +285,38 @@ if fonts are self-hosted later. Keep the game fully usable without the CDN.
   `visibilitychange`, with a clear “Paused” state so switching apps does not
   cause an accidental miss. (Resume is tap/Space/P, not automatic, to avoid a
   surprise drop on return.)
-- Add a personal run history showing score, floors, mode, date, and best streak;
-  keep only a bounded local list.
-- Add daily streaks, personal daily best, and a countdown to the next UTC board.
-- Add a “share result card” rendered with Canvas rather than requiring a paid
-  image service.
-- Add an optional high-contrast palette, reduced-motion mode, and a setting to
-  disable haptics independently from sound.
-- Add different difficulty modes "Casual or Normal" which is the current gameplay while "Hardcore" has different drop speeds, floor widths, scoring, trickery, unfairness (e.g. invisible floors, moving platforms, etc.), and a local best-by-difficulty record. Cheat menu should still be available in all modes.
+- ✅ **Done (2026-07-14)** — Add a personal run history showing score, floors,
+  mode, date, and best streak; keep only a bounded local list. Implemented as
+  `Storage.addRun`/`runs()` (bounded to 30) surfaced under a new **History** tab
+  on the board (`js/storage.js`, `js/ui.js`); the game now tracks `maxCombo` as
+  the run's best streak (`js/game.js`).
+- ✅ **Done (2026-07-14)** — Add daily streaks, personal daily best, and a
+  countdown to the next UTC board. `Storage.recordDaily` maintains an all-time
+  daily best and a consecutive-day streak; a title-screen stats strip shows
+  🔥 streak, daily best, and a live `HH:MM:SS` countdown to the next UTC board
+  (`js/main.js` `updateStats`/`timeToNextUtcMidnight`, `js/ui.js`).
+- ✅ **Done (2026-07-14)** — Add a “share result card” rendered with Canvas
+  rather than requiring a paid image service. `js/sharecard.js` renders a
+  branded 1080² PNG (score, floors, mode, difficulty, name, date); sharing
+  prefers the Web Share API with the image file, then a text share, then a PNG
+  download, then clipboard (`js/main.js` `shareRun`).
+- ✅ **Done (2026-07-14)** — Add an optional high-contrast palette, reduced-motion
+  mode, and a setting to disable haptics independently from sound. New Settings
+  overlay (⚙️) with three persisted toggles: high-contrast worlds
+  (`js/palettes.js` `setHighContrast` + `HC_WORLDS`), a reduced-motion override
+  (combines with the OS preference; gates canvas shake/flash and CSS animation),
+  and haptics on/off (`js/haptics.js` `setEnabled`) — sound stays on its own 🔊
+  button.
+- ✅ **Done (2026-07-14)** — Add different difficulty modes: **Normal** (the
+  original balance) and **Hardcore** — thinner tower, faster/higher speed ramp,
+  tighter Perfect window, double scoring, no alignment guides, and deterministic
+  trickery (flickering “invisible” floors + seeded swing “gusts”, so a Daily seed
+  stays identical for everyone). Difficulty is a start-screen toggle backed by
+  `js/difficulty.js` profiles read live in `js/game.js`/`js/renderer.js`, with a
+  local best-by-difficulty record (`Storage.bestForDifficulty`). The cheat menu
+  works in every mode (unchanged). “Moving platforms” from the example were
+  realized as the seeded swing-speed gusts; literal drifting stacks were omitted
+  as they'd break landing geometry unfairly.
 
 ### Competition and retention
 
