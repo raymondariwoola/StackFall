@@ -1,0 +1,19 @@
+name = "stackfall-lb"
+main = "src/index.js"
+compatibility_date = "2024-11-01"
+
+# --- KV leaderboard storage ---------------------------------------------------
+# Create the namespace once, then paste its id below (see README, step B2):
+#   npx wrangler kv namespace create LEADERBOARD
+[[kv_namespaces]]
+binding = "LEADERBOARD"
+id = "REPLACE_WITH_YOUR_KV_NAMESPACE_ID"
+
+# --- Tunables (safe to leave as-is) ------------------------------------------
+[vars]
+# Must match the salt in js/leaderboard.js (signPayload). Not a real secret.
+SIGN_SALT = "stackfall"
+# Restrict to your site's origin in production, e.g. "https://stackfall.pages.dev"
+ALLOW_ORIGIN = "*"
+# Reject implausible scores server-side.
+MAX_SCORE = "100000"

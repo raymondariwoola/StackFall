@@ -4,6 +4,7 @@
 const BEST_KEY = 'stackfall_best';
 const SCORES_KEY = 'stackfall_scores';
 const MUTE_KEY = 'stackfall_muted';
+const NAME_KEY = 'stackfall_name';
 
 export const Storage = {
   best(){
@@ -22,4 +23,6 @@ export const Storage = {
   },
   muted(){ return localStorage.getItem(MUTE_KEY) === '1'; },
   setMuted(m){ localStorage.setItem(MUTE_KEY, m ? '1' : '0'); },
+  name(){ return localStorage.getItem(NAME_KEY) || ''; },
+  setName(n){ localStorage.setItem(NAME_KEY, (n || '').slice(0, 12)); },
 };

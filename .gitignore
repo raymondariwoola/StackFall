@@ -1,3 +1,8 @@
+# Node / Cloudflare Worker tooling
+node_modules/
+.wrangler/
+.dev.vars
+
 # General
 .DS_Store
 .localized

@@ -2,6 +2,12 @@
 
 import { Storage } from './storage.js';
 
+function escapeHtml(s){
+  return String(s).replace(/[&<>"']/g, (c) => (
+    { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]
+  ));
+}
+
 export class UI {
   constructor(){
     this.score = document.getElementById('score');
@@ -13,9 +19,17 @@ export class UI {
     this.soundBtn = document.getElementById('sound-btn');
     this.hint = document.getElementById('restart-hint');
     this.lbList = document.getElementById('lb-list');
+    this.lbTitle = document.querySelector('.lb-title');
+    this.nameInput = document.getElementById('name-input');
     this.eyebrow = document.querySelector('.eyebrow');
     this.h1 = document.querySelector('.panel h1');
     this.sub = document.querySelector('.panel .sub');
+
+    // Name field: persist as you type, and don't let taps fall through to
+    // the "tap anywhere to start" handler on the wrap.
+    this.nameInput.value = Storage.name();
+    this.nameInput.addEventListener('input', () => Storage.setName(this.nameInput.value.trim()));
+    this.nameInput.addEventListener('pointerdown', (e) => e.stopPropagation());
 
     this.refreshBest();
     this.renderLeaderboard();
@@ -67,11 +81,24 @@ export class UI {
     this.hint.classList.remove('show');
   }
 
+  // Local (offline) board: this device's best runs.
   renderLeaderboard(){
+    if (this.lbTitle) this.lbTitle.textContent = 'Your Best Runs';
     const list = Storage.scores().slice().sort((a, b) => b - a).slice(0, 5);
     this.lbList.innerHTML = list.length
       ? list.map((s, i) => `<div class="lb-row"><span>#${i + 1}</span><span>${s} pts</span></div>`).join('')
       : '<div class="lb-row"><span>No runs yet</span><span>—</span></div>';
+  }
+
+  // Remote (Worker) board: global top scores with names. Names are already
+  // sanitized server-side; we escape again here as defense-in-depth.
+  renderRemoteScores(scores, myName){
+    if (this.lbTitle) this.lbTitle.textContent = 'Global Top 20';
+    const rows = (scores || []).slice(0, 20).map((e, i) => {
+      const mine = myName && e.name === myName ? ' me' : '';
+      return `<div class="lb-row${mine}"><span>#${i + 1} ${escapeHtml(e.name || 'anon')}</span><span>${e.score | 0} pts</span></div>`;
+    }).join('');
+    this.lbList.innerHTML = rows || '<div class="lb-row"><span>No scores yet</span><span>—</span></div>';
   }
 
   setSoundIcon(muted){ this.soundBtn.textContent = muted ? '🔇' : '🔊'; }

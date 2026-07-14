@@ -1,0 +1,14 @@
+{
+  "name": "stackfall-worker",
+  "private": true,
+  "version": "1.0.0",
+  "description": "Cloudflare Worker: KV leaderboard + daily seed for StackFall",
+  "scripts": {
+    "dev": "wrangler dev",
+    "deploy": "wrangler deploy",
+    "tail": "wrangler tail"
+  },
+  "devDependencies": {
+    "wrangler": "^3.90.0"
+  }
+}

@@ -13,7 +13,7 @@ import { Storage } from './storage.js';
 import { UI } from './ui.js';
 import { RNG, dailySeed } from './rng.js';
 import { worldFor } from './palettes.js';
-import { fetchDailySeed, submitScore } from './leaderboard.js';
+import { fetchDailySeed, submitScore, fetchLeaderboard, WORKER_URL } from './leaderboard.js';
 
 const canvas = document.getElementById('c');
 const ctx = canvas.getContext('2d');
@@ -40,13 +40,30 @@ const game = new Game({
     onWorld: (world) => { background.setWorld(world); },
     onGameOver: (score, floors) => {
       Storage.addScore(score);
-      submitScore('me', score).catch(() => {});   // no-op until a Worker is wired
+      // Submit to the global board (no-ops until WORKER_URL is set), then
+      // refresh the panel with the latest standings.
+      submitScore(Storage.name() || 'anon', score)
+        .then(() => refreshRemoteBoard())
+        .catch(() => {});
       clearTimeout(overlayTimer);
       // Let the tower collapse play out before the panel slides in.
-      overlayTimer = setTimeout(() => ui.showGameOver(score, floors), 700);
+      overlayTimer = setTimeout(() => {
+        ui.showGameOver(score, floors);
+        refreshRemoteBoard();
+      }, 700);
     },
   },
 });
+
+// Pull the global leaderboard when a Worker is configured; otherwise the
+// local "Your Best Runs" board (already rendered) stays in place.
+async function refreshRemoteBoard(){
+  if (!WORKER_URL) return;
+  try {
+    const data = await fetchLeaderboard();
+    if (data && Array.isArray(data.scores)) ui.renderRemoteScores(data.scores, Storage.name());
+  } catch (e) { /* stay on local board */ }
+}
 
 function resize(){
   view.DPR = Math.min(window.devicePixelRatio || 1, CONFIG.DPR_CAP);
@@ -62,6 +79,7 @@ window.addEventListener('resize', resize);
 resize();
 game.buildDemo();
 background.setWorld(worldFor(0));
+refreshRemoteBoard();   // show global scores on the title screen if online
 
 async function seedForMode(){
   if (mode === 'daily') return await fetchDailySeed();
