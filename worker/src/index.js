@@ -82,6 +82,14 @@ async function handleScore(request, env, cors) {
     return json({ ok: false, error: 'bad_score' }, 400, cors);
   }
 
+  // Cheated runs: keep them off the global board when BLOCK_CHEATED is on
+  // (default). Still return the current standings so the panel can render.
+  const blockCheated = (env.BLOCK_CHEATED || '1') !== '0';
+  if (body.cheated === true && blockCheated) {
+    const all = await readBoard(env, boardKeyAll());
+    return json({ ok: true, recorded: false, cheated: true, scores: all.slice(0, TOP) }, 200, cors);
+  }
+
   const entry = { name: cleanName(body.name), score, ts: Date.now() };
   const day = dailySeedString();
 

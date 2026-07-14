@@ -28,6 +28,7 @@ export class Game {
     this.bh = 0;
     this.topY = 0;
     this.curWorld = 0;
+    this.cheated = false;        // true if any cheat affected this run
   }
 
   // A gentle, non-interactive tower for the title screen.
@@ -57,6 +58,7 @@ export class Game {
     this.settle = 0;
     this.curWorld = 0;
     this.overState = false;
+    this.cheated = false;
     this.baseW = W * CONFIG.BASE_WIDTH_RATIO;
     this.stack.push({ x: (W - this.baseW) / 2, w: this.baseW, floor: 0 });
     this._spawnMoving();
@@ -82,6 +84,8 @@ export class Game {
   drop(){
     if (!this.running || this.paused || !this.moving) return;
     const { W, H } = this.view;
+    // Mark the run cheated the moment any cheat is engaged during it.
+    if (Cheats.active && Cheats.anyEngaged()) this.cheated = true;
     const top = this.stack[this.stack.length - 1];
 
     // Cheat: snap the swinging block onto the tower before we measure.
@@ -200,7 +204,7 @@ export class Game {
     this.effects.shakeIt(0.25);
     this.audio.gameOver();
     this.haptics.buzz([0, 40, 60, 80]);
-    if (this.cb.onGameOver) this.cb.onGameOver(this.score, this.floors);
+    if (this.cb.onGameOver) this.cb.onGameOver(this.score, this.floors, this.cheated);
   }
 
   update(dt){
@@ -221,11 +225,13 @@ export class Game {
   // ---------- Cheat actions (invoked from the cheat menu) ----------
   cheatAddScore(n){
     if (!this.running) return;
+    this.cheated = true;
     this.score += n;
     if (this.cb.onScore) this.cb.onScore(this.score, this.combo);
   }
   cheatAddFloors(n){
     if (!this.running) return;
+    this.cheated = true;
     this.floors += n;
     this.score += n;
     const wi = worldIndex(this.floors);

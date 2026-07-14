@@ -41,12 +41,13 @@ const game = new Game({
   callbacks: {
     onScore: (s, combo) => { ui.setScore(s); ui.setCombo(combo); ui.pulseScore(); },
     onWorld: (world) => { background.setWorld(world); },
-    onGameOver: (score, floors) => {
+    onGameOver: (score, floors, cheated) => {
       lastRun = { score, floors };
       Storage.addScore(score);
       // Submit to the global board (no-ops until WORKER_URL is set), then
-      // refresh the panel with the latest standings.
-      submitScore(Storage.name() || 'anon', score)
+      // refresh the panel with the latest standings. The `cheated` flag lets
+      // the Worker keep cheated runs off the global board (see BLOCK_CHEATED).
+      submitScore(Storage.name() || 'anon', score, cheated)
         .then(() => refreshRemoteBoard())
         .catch(() => {});
       clearTimeout(overlayTimer);

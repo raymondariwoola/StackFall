@@ -25,9 +25,9 @@ async function signPayload(obj){
   return { body, sig };
 }
 
-export async function submitScore(name, score){
+export async function submitScore(name, score, cheated = false){
   if (!WORKER_URL) return { ok: false, offline: true };
-  const payload = { name, score, day: dailySeedString(), ts: Date.now() };
+  const payload = { name, score, cheated: !!cheated, day: dailySeedString(), ts: Date.now() };
   const { body, sig } = await signPayload(payload);
   const res = await fetch(WORKER_URL + '/score', {
     method: 'POST',

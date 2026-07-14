@@ -186,10 +186,12 @@ A red **CHEATS ON** badge shows while any cheat is engaged.
 - **Close** keeps your cheats on across runs; **Exit Cheats** turns everything
   off. The passphrase is remembered for the browser session, so you only enter
   it once.
-- **Cheated runs still post to the leaderboard** — by design. If you'd rather
-  keep them off the board, have the client send a `cheated: true` flag on
-  `/score` and skip the KV write server-side (a ~3-line change in
-  [`worker/src/index.js`](worker/src/index.js)).
+- **Cheated runs are kept off the global board by default.** A run is flagged
+  the moment any cheat is engaged; the client sends `cheated: true` on `/score`
+  and the Worker skips the KV write. Flip it with the **`BLOCK_CHEATED`** var in
+  `wrangler.toml` (`"1"` = block, default; `"0"` = allow cheated scores onto the
+  global board). Cheated runs always still appear on the player's local
+  **"Your Best Runs"** board.
 
 ## Share button
 

@@ -17,6 +17,10 @@ SIGN_SALT = "stackfall"
 ALLOW_ORIGIN = "*"
 # Reject implausible scores server-side.
 MAX_SCORE = "100000"
+# Keep cheated runs off the GLOBAL leaderboard. "1" = block (default),
+# "0" = allow cheated scores onto the board. (They always stay on the
+# player's local "Your Best Runs" board regardless.)
+BLOCK_CHEATED = "0"
 
 # Secret cheat-menu passphrase. For real secrecy, DON'T put it here (this file
 # is committed) — instead run:  npx wrangler secret put CHEAT_CODE
