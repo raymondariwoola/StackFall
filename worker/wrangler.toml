@@ -17,6 +17,13 @@ SIGN_SALT = "stackfall"
 ALLOW_ORIGIN = "*"
 # Reject implausible scores server-side.
 MAX_SCORE = "100000"
+# Per-IP rate limits over a rolling 60s window (soft, KV-backed).
+# SCORE_RATE_LIMIT bounds score spam; CHEAT_RATE_LIMIT throttles passphrase guesses.
+SCORE_RATE_LIMIT = "30"
+CHEAT_RATE_LIMIT = "5"
+# How many past days a daily board (`/leaderboard?daily=1&day=YYYY-MM-DD`) may be
+# queried. 0 = today only. Anything outside a strict YYYY-MM-DD in this window is rejected.
+RETENTION_DAYS = "7"
 # Keep cheated runs off the GLOBAL leaderboard. "1" = block (default),
 # "0" = allow cheated scores onto the board. (They always stay on the
 # player's local "Your Best Runs" board regardless.)

@@ -25,9 +25,11 @@ async function signPayload(obj){
   return { body, sig };
 }
 
-export async function submitScore(name, score, cheated = false){
+export async function submitScore(name, score, cheated = false, daily = false){
   if (!WORKER_URL) return { ok: false, offline: true };
-  const payload = { name, score, cheated: !!cheated, day: dailySeedString(), ts: Date.now() };
+  // `daily` tells the Worker which competition this run belongs to. The Worker
+  // decides the authoritative day itself; we send `day` only for context/logs.
+  const payload = { name, score, cheated: !!cheated, daily: !!daily, day: dailySeedString(), ts: Date.now() };
   const { body, sig } = await signPayload(payload);
   const res = await fetch(WORKER_URL + '/score', {
     method: 'POST',
@@ -37,9 +39,11 @@ export async function submitScore(name, score, cheated = false){
   return res.json();
 }
 
-export async function fetchLeaderboard(){
+// Fetch the standings for the requested competition. `daily` selects today's
+// board (`?daily=1`); otherwise the all-time board is returned.
+export async function fetchLeaderboard(daily = false){
   if (!WORKER_URL) return null;
-  const res = await fetch(WORKER_URL + '/leaderboard');
+  const res = await fetch(WORKER_URL + '/leaderboard' + (daily ? '?daily=1' : ''));
   return res.json();
 }
 
@@ -62,14 +66,19 @@ export async function verifyCheat(code){
 }
 
 // Ask the Worker for today's deterministic seed so everyone plays the same
-// board. Falls back to a locally computed seed (same formula) when offline.
-export async function fetchDailySeed(){
+// board. Bounded by an AbortController timeout so a slow/stalled Worker never
+// leaves the player stuck on a blank start; falls back to a locally computed
+// seed (same formula) on timeout, network error, or when offline.
+export async function fetchDailySeed({ timeoutMs = 6000 } = {}){
   if (WORKER_URL){
+    const ctrl = new AbortController();
+    const timer = setTimeout(() => ctrl.abort(), timeoutMs);
     try {
-      const res = await fetch(WORKER_URL + '/daily');
+      const res = await fetch(WORKER_URL + '/daily', { signal: ctrl.signal });
       const data = await res.json();
       if (data && typeof data.seed === 'number') return data.seed >>> 0;
-    } catch (e) { /* fall through to local */ }
+    } catch (e) { /* timeout/abort/network → fall through to local */ }
+    finally { clearTimeout(timer); }
   }
   return dailySeed();
 }

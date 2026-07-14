@@ -12,8 +12,11 @@
 // good enough for a casual game; if you ever need strong consistency or high
 // write volume, graduate to Durable Objects or D1 (see README).
 
-const KEEP = 50;   // entries stored per board
-const TOP = 20;    // entries returned to clients
+const KEEP = 50;              // entries stored per board
+const TOP = 20;               // entries returned to clients
+const RATE_WINDOW = 60;       // rate-limit window, seconds (KV TTL minimum is 60)
+const MAX_BODY_BYTES = 1024;  // reject score bodies larger than this
+const DEFAULT_RETENTION = 7;  // how many past days a daily board may be queried
 
 export default {
   async fetch(request, env) {
@@ -35,8 +38,22 @@ export default {
       }
 
       if (url.pathname === '/leaderboard' && request.method === 'GET') {
+        // Reject pathologically long query strings outright.
+        if (url.search.length > 128) return json({ ok: false, error: 'bad_request' }, 400, cors);
+
         const daily = url.searchParams.get('daily') === '1' || url.searchParams.get('scope') === 'daily';
-        const day = url.searchParams.get('day') || dailySeedString();
+        let day = dailySeedString();
+        if (daily) {
+          // Only accept a strict, real YYYY-MM-DD within the retention window.
+          // Arbitrary/oversized keys are rejected so the KV surface stays bounded.
+          const dayParam = url.searchParams.get('day');
+          if (dayParam != null) {
+            if (!isValidDayKey(dayParam) || !dayWithinRetention(dayParam, retentionDays(env))) {
+              return json({ ok: false, error: 'bad_day' }, 400, cors);
+            }
+            day = dayParam;
+          }
+        }
         const key = daily ? boardKeyDay(day) : boardKeyAll();
         const scores = (await readBoard(env, key)).slice(0, TOP);
         return json({ scope: daily ? 'daily' : 'all', day, scores }, 200, cors);
@@ -52,14 +69,27 @@ export default {
 
       return json({ ok: false, error: 'not_found' }, 404, cors);
     } catch (err) {
-      return json({ ok: false, error: 'server_error', detail: String(err && err.message || err) }, 500, cors);
+      // Log the detail server-side; return a generic code so implementation,
+      // binding, or platform details never leak to callers.
+      console.error('stackfall worker error:', err && err.stack || err);
+      return json({ ok: false, error: 'server_error' }, 500, cors);
     }
   },
 };
 
 // ---------- /score ----------
 async function handleScore(request, env, cors) {
+  // Per-IP rate limit before any work: bounds spam and forged-signature floods.
+  const ip = clientIp(request);
+  const limited = await rateLimit(env, 'score', ip, intEnv(env.SCORE_RATE_LIMIT, 30), RATE_WINDOW);
+  if (!limited.ok) return tooMany(limited, cors);
+
   const raw = await request.text();
+
+  // Cap the body: submissions are tiny, so anything large is abuse or malformed.
+  if (raw.length > MAX_BODY_BYTES) {
+    return json({ ok: false, error: 'too_large' }, 413, cors);
+  }
 
   // Verify the client's lightweight signature. This is NOT real security
   // (the salt ships in client code) — it only deters casual `curl` spam.
@@ -75,39 +105,48 @@ async function handleScore(request, env, cors) {
   try { body = JSON.parse(raw); } catch (e) {
     return json({ ok: false, error: 'bad_json' }, 400, cors);
   }
+  if (typeof body !== 'object' || body === null) {
+    return json({ ok: false, error: 'bad_json' }, 400, cors);
+  }
 
-  const maxScore = parseInt(env.MAX_SCORE || '100000', 10);
+  const maxScore = intEnv(env.MAX_SCORE, 100000);
   const score = body.score;
   if (typeof score !== 'number' || !isFinite(score) || score < 0 || score > maxScore || score !== Math.floor(score)) {
     return json({ ok: false, error: 'bad_score' }, 400, cors);
   }
 
-  // Cheated runs: keep them off the global board when BLOCK_CHEATED is on
-  // (default). Still return the current standings so the panel can render.
+  // The run's competition. Endless runs write only to the all-time board;
+  // Daily runs write only to today's board. This keeps the two competitions
+  // genuinely separate (an Endless run can no longer land on the Daily board).
+  const daily = body.daily === true;
+  const day = dailySeedString();           // server-authoritative day for the run
+  const key = daily ? boardKeyDay(day) : boardKeyAll();
+
+  // Cheated runs: keep them off the board when BLOCK_CHEATED is on (default).
+  // Still return the current standings so the panel can render.
   const blockCheated = (env.BLOCK_CHEATED || '1') !== '0';
   if (body.cheated === true && blockCheated) {
-    const all = await readBoard(env, boardKeyAll());
-    return json({ ok: true, recorded: false, cheated: true, scores: all.slice(0, TOP) }, 200, cors);
+    const board = await readBoard(env, key);
+    return json({ ok: true, recorded: false, cheated: true, scope: daily ? 'daily' : 'all', day, scores: board.slice(0, TOP) }, 200, cors);
   }
 
   const entry = { name: cleanName(body.name), score, ts: Date.now() };
-  const day = dailySeedString();
+  const board = await readBoard(env, key);
+  const res = addTo(board, entry);
+  await writeBoard(env, key, res.list);
 
-  const all = await readBoard(env, boardKeyAll());
-  const allRes = addTo(all, { ...entry });
-  await writeBoard(env, boardKeyAll(), allRes.list);
-
-  const dayBoard = await readBoard(env, boardKeyDay(day));
-  const dayRes = addTo(dayBoard, { ...entry });
-  await writeBoard(env, boardKeyDay(day), dayRes.list);
-
-  return json({ ok: true, rank: allRes.rank, dailyRank: dayRes.rank, scores: allRes.list.slice(0, TOP) }, 200, cors);
+  return json({ ok: true, recorded: true, scope: daily ? 'daily' : 'all', day, rank: res.rank, scores: res.list.slice(0, TOP) }, 200, cors);
 }
 
 // ---------- /cheat ----------
 async function handleCheat(request, env, cors) {
   const secret = env.CHEAT_CODE || '';
   if (!secret) return json({ ok: false, error: 'cheats_disabled' }, 403, cors);
+
+  // Throttle guesses per IP so the passphrase can't be brute-forced online.
+  const ip = clientIp(request);
+  const limited = await rateLimit(env, 'cheat', ip, intEnv(env.CHEAT_RATE_LIMIT, 5), RATE_WINDOW);
+  if (!limited.ok) return tooMany(limited, cors);
 
   let code = '';
   try { code = (await request.json()).code || ''; } catch (e) { code = ''; }
@@ -149,6 +188,62 @@ function addTo(list, entry) {
   list.sort((a, b) => b.score - a.score || a.ts - b.ts);   // higher score, then earlier
   const rank = list.indexOf(entry) + 1;
   return { list: list.slice(0, KEEP), rank };
+}
+
+// ---------- abuse controls ----------
+function clientIp(request) {
+  return request.headers.get('CF-Connecting-IP') || request.headers.get('X-Forwarded-For') || '';
+}
+
+// Best-effort per-IP fixed-window limiter backed by a short-lived KV key.
+// KV is eventually consistent, so this is a soft ceiling, not a hard gate —
+// which is the right trade-off for a casual game's spam/brute-force defence.
+async function rateLimit(env, bucket, ip, limit, windowSec) {
+  if (!ip || !env.LEADERBOARD) return { ok: true };
+  const key = `rl:${bucket}:${ip}`;
+  let count = 0;
+  try { count = parseInt(await env.LEADERBOARD.get(key) || '0', 10) || 0; } catch (e) { /* fail open */ }
+  if (count >= limit) return { ok: false, retryAfter: windowSec };
+  try { await env.LEADERBOARD.put(key, String(count + 1), { expirationTtl: windowSec }); } catch (e) { /* fail open */ }
+  return { ok: true };
+}
+
+function tooMany(info, cors) {
+  return json(
+    { ok: false, error: 'rate_limited' },
+    429,
+    { ...cors, 'Retry-After': String((info && info.retryAfter) || RATE_WINDOW) },
+  );
+}
+
+function intEnv(v, fallback) {
+  const n = parseInt(v, 10);
+  return Number.isFinite(n) ? n : fallback;
+}
+
+// ---------- day-key validation ----------
+// Accept only a real calendar YYYY-MM-DD; reject junk, oversized, and impossible dates.
+function isValidDayKey(day) {
+  if (typeof day !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(day)) return false;
+  const [y, m, d] = day.split('-').map(Number);
+  if (m < 1 || m > 12 || d < 1 || d > 31) return false;
+  const dt = new Date(Date.UTC(y, m - 1, d));
+  return dt.getUTCFullYear() === y && dt.getUTCMonth() === m - 1 && dt.getUTCDate() === d;
+}
+
+// Allow today and up to `retentionDays` in the past; never the future.
+function dayWithinRetention(day, retentionDays) {
+  const today = dailySeedString();
+  if (day === today) return true;
+  const dt = Date.parse(day + 'T00:00:00Z');
+  const now = Date.parse(today + 'T00:00:00Z');
+  if (Number.isNaN(dt)) return false;
+  const diffDays = (now - dt) / 86400000;
+  return diffDays >= 0 && diffDays <= retentionDays;
+}
+
+function retentionDays(env) {
+  return Math.max(0, intEnv(env && env.RETENTION_DAYS, DEFAULT_RETENTION));
 }
 
 // ---------- validation ----------

@@ -101,10 +101,11 @@ export class UI {
       : '<div class="lb-row"><span>No runs yet</span><span>—</span></div>';
   }
 
-  // Remote (Worker) board: global top scores with names. Names are already
+  // Remote (Worker) board: global top scores with names. `scope` selects the
+  // heading ('daily' → today's board, else all-time). Names are already
   // sanitized server-side; we escape again here as defense-in-depth.
-  renderRemoteScores(scores, myName){
-    if (this.lbTitle) this.lbTitle.textContent = 'Global Top 20';
+  renderRemoteScores(scores, myName, scope = 'all'){
+    if (this.lbTitle) this.lbTitle.textContent = scope === 'daily' ? "Today's Top 20" : 'Global Top 20';
     const rows = (scores || []).slice(0, 20).map((e, i) => {
       const mine = myName && e.name === myName ? ' me' : '';
       return `<div class="lb-row${mine}"><span>#${i + 1} ${escapeHtml(e.name || 'anon')}</span><span>${e.score | 0} pts</span></div>`;
@@ -114,4 +115,18 @@ export class UI {
 
   setSoundIcon(muted){ this.soundBtn.textContent = muted ? '🔇' : '🔊'; }
   setMode(mode){ this.modeBtn.textContent = mode === 'daily' ? 'Daily Board' : 'Endless'; }
+
+  // Loading state while a Daily seed is being fetched: disable Start so a run
+  // can't begin (or be spammed) before the seed resolves, and show progress.
+  setStarting(loading){
+    if (loading){
+      this._startLabel = this.startBtn.textContent;
+      this.startBtn.textContent = 'Loading…';
+    } else if (this._startLabel != null){
+      this.startBtn.textContent = this._startLabel;
+      this._startLabel = null;
+    }
+    this.startBtn.disabled = !!loading;
+    this.startBtn.setAttribute('aria-busy', loading ? 'true' : 'false');
+  }
 }

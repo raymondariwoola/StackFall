@@ -23,7 +23,14 @@ syntax check. The highest-impact problems are:
 
 ## Bugs and risks
 
-### High: Endless runs contaminate the daily board
+### High: Endless runs contaminate the daily board — ✅ Fixed (2026-07-14)
+
+Resolution: the client now sends an explicit `daily` boolean captured at the
+start of the run (`js/main.js` `runMode`, `js/leaderboard.js` `submitScore`).
+The Worker writes to exactly one board per run — `board:all` for Endless,
+`board:day:<server-day>` for Daily — using its own server-authoritative day
+(`worker/src/index.js` `handleScore`). An Endless run can no longer land on the
+Daily board, and the day key is the run's accepted day, not processing time.
 
 Evidence: `js/main.js:50` submits every game-over with only the score and
 cheat flag. In `worker/src/index.js:93-102`, every accepted score is written
@@ -40,7 +47,13 @@ validate it server-side, and only write `board:day:*` for genuine Daily runs.
 Record the run’s server-accepted day once, and display separate ranks for the
 two modes.
 
-### High: Daily mode still displays the all-time board
+### High: Daily mode still displays the all-time board — ✅ Fixed (2026-07-14)
+
+Resolution: `fetchLeaderboard(daily)` now requests `/leaderboard?daily=1` when
+Daily is selected, `refreshRemoteBoard(daily)` is scope-aware and is re-run when
+the mode toggle changes (`js/main.js`), and the board heading reflects the scope
+("Today's Top 20" vs "Global Top 20", `js/ui.js` `renderRemoteScores`). The
+game-over panel and share text use the mode captured at the start of the run.
 
 Evidence: `js/main.js:90-95` always calls `fetchLeaderboard()` without a
 daily query. `js/leaderboard.js:40-43` always requests `/leaderboard`, while
@@ -56,7 +69,14 @@ pass the selected scope into the UI, and refresh the board when the mode
 changes. Use the mode captured at the start of a run for the game-over panel
 and share text.
 
-### High: Score signatures are forgeable and submissions are unauthenticated
+### High: Score signatures are forgeable and submissions are unauthenticated — ⚠️ Partially addressed (2026-07-14)
+
+Resolution (partial): added a per-IP rate limit (`SCORE_RATE_LIMIT`, default 30
+per 60s) and a request-size cap (`MAX_BODY_BYTES` = 1KB) in
+`worker/src/index.js` `handleScore`, plus stricter body-type validation. This
+bounds forged-signature floods and casual spam. The signature remains
+client-authoritative by design — a server-verifiable replay or Turnstile gate
+(and/or a visible "unverified" label) is still outstanding for real trust.
 
 Evidence: the salt is public in `worker/wrangler.toml:13-15` and the same
 algorithm is shipped to every browser in `js/leaderboard.js:16-25`. The Worker
@@ -89,7 +109,13 @@ accept append-only per-score records and periodically rebuild the top list.
 For a small launch, at minimum document that rankings are eventually
 consistent and add a retry/re-read path.
 
-### Medium: Arbitrary daily keys can be queried forever
+### Medium: Arbitrary daily keys can be queried forever — ✅ Fixed (2026-07-14)
+
+Resolution: `/leaderboard` now accepts a `day` override only for daily queries,
+validates it against a strict real-calendar `YYYY-MM-DD` (`isValidDayKey`),
+restricts it to a retention window (`RETENTION_DAYS`, default 7 days, no future)
+via `dayWithinRetention`, and rejects query strings over 128 chars. Invalid
+values return `400 bad_day`. Validators are covered by a local test harness.
 
 Evidence: `worker/src/index.js:38-41` accepts any `day` query string and uses it
 directly in the KV key through `boardKeyDay(day)`.
@@ -104,7 +130,13 @@ queries to today and a small retention window, and reject oversized query
 strings. Consider removing the public `day` override unless historical boards
 are a feature.
 
-### Medium: Cheat passphrase endpoint can be brute-forced
+### Medium: Cheat passphrase endpoint can be brute-forced — ✅ Fixed (2026-07-14)
+
+Resolution: `/cheat` is now rate-limited per IP (`CHEAT_RATE_LIMIT`, default 5
+guesses per 60s) before the passphrase is compared, returning `429 rate_limited`
+with a `Retry-After` header once exceeded. Combined with the existing
+constant-time compare and a long random `CHEAT_CODE`, online brute force is
+impractical. (Gating the endpoint behind an enable flag remains an option.)
 
 Evidence: `worker/src/index.js:108-117` performs unlimited online guesses at
 `/cheat`, with no throttling, lockout, or request provenance requirement.
@@ -117,7 +149,11 @@ Recommendation: add a short per-IP failure counter and exponential backoff in
 KV, use a long random secret, and avoid exposing the endpoint unless cheats
 are enabled. A local-only development switch is safer for a public game.
 
-### Medium: Worker returns internal error details to public callers
+### Medium: Worker returns internal error details to public callers — ✅ Fixed (2026-07-14)
+
+Resolution: the top-level catch now logs the full error/stack server-side with
+`console.error` and returns a generic `{ ok: false, error: 'server_error' }`
+with no `detail`, so implementation/binding details no longer leak to callers.
 
 Evidence: `worker/src/index.js:54-56` includes `err.message` in a 500 response.
 
@@ -127,7 +163,13 @@ make error responses inconsistent.
 Recommendation: log the detailed error server-side and return a generic error
 code/message to clients.
 
-### Medium: Local storage failures can break boot or a completed run
+### Medium: Local storage failures can break boot or a completed run — ✅ Fixed (2026-07-14)
+
+Resolution: `js/storage.js` now routes every read/write through `safeGet`/
+`safeSet` helpers that catch storage exceptions and fall back to an in-memory
+`Map`, so private-browsing/quota/policy errors can never throw during boot or
+game-over. `scores()` is sanitized to finite, non-negative integers before use,
+and `addScore` ignores non-finite/negative inputs.
 
 Evidence: `js/storage.js:11`, `24-27` call `localStorage` without guards, and
 `js/main.js:35-36` reads storage during startup. Only JSON parsing is wrapped.
@@ -140,7 +182,14 @@ Recommendation: wrap every storage read/write in safe helpers with an in-memory
 fallback. Validate that `scores()` returns an array of finite non-negative
 numbers before sorting or rendering.
 
-### Medium: Starting a Daily run has no timeout or cancellation
+### Medium: Starting a Daily run has no timeout or cancellation — ✅ Fixed (2026-07-14)
+
+Resolution: `fetchDailySeed` now uses an `AbortController` with a 6s timeout and
+falls back to the locally computed seed on timeout/error (`js/leaderboard.js`).
+`start()` keeps the overlay up with a "Loading…" state and disables Start while
+the seed loads, ignores re-entrant taps (`starting` guard), and uses a
+monotonically increasing `startToken` so only the latest request can reset the
+game (`js/main.js`, `js/ui.js` `setStarting`).
 
 Evidence: `js/main.js:119-130` hides the overlay before awaiting
 `fetchDailySeed()`, and `js/leaderboard.js:66-74` performs an uncancelled fetch.
@@ -154,7 +203,12 @@ Recommendation: add an `AbortController` timeout, keep a loading state, disable
 Start while loading, and use a monotonically increasing start request id so
 only the latest request can reset the game.
 
-### Low: Share text can describe the wrong mode
+### Low: Share text can describe the wrong mode — ✅ Fixed (2026-07-14)
+
+Resolution: the run's mode is captured into `lastRun.mode` at game over (from the
+`runMode` snapshot taken when the run started), and `shareRun()` reads
+`lastRun.mode` instead of the live global `mode` (`js/main.js`). Toggling to Daily
+after an Endless run can no longer produce a "today's board" share message.
 
 Evidence: `js/main.js:73-74` reads the mutable global `mode` when Share Score
 is clicked. The mode button remains available after game over.
@@ -247,11 +301,14 @@ if fonts are self-hosted later. Keep the game fully usable without the CDN.
 
 ## Suggested implementation order
 
-1. Fix mode propagation and fetch the correct daily leaderboard.
-2. Add Worker input validation, rate limiting, generic errors, and strict day
-   keys.
-3. Make local storage and daily startup failure-safe.
-4. Move leaderboard writes to a serialized Durable Object if the audience grows.
-5. Add pause/visibility handling, accessibility semantics, and a first-run
-   tutorial.
-
+1. ✅ **Done (2026-07-14)** — Fix mode propagation and fetch the correct daily
+   leaderboard.
+2. ✅ **Done (2026-07-14)** — Add Worker input validation, rate limiting, generic
+   errors, and strict day keys. (Score submissions remain client-authoritative;
+   a server-verifiable replay / Turnstile gate is still outstanding.)
+3. ✅ **Done (2026-07-14)** — Make local storage and daily startup failure-safe.
+4. ⬜ Move leaderboard writes to a serialized Durable Object if the audience
+   grows. (Not started — the KV read-modify-write race remains; still
+   eventually consistent under concurrent writes.)
+5. ⬜ Add pause/visibility handling, accessibility semantics, and a first-run
+   tutorial. (Not started.)

@@ -28,9 +28,12 @@ const renderer = new Renderer(ctx);
 const ui = new UI();
 const rng = new RNG((Date.now() >>> 0) || 1);
 
-let mode = 'endless';      // 'endless' | 'daily'
+let mode = 'endless';      // 'endless' | 'daily' — the mode for the NEXT run
+let runMode = mode;        // the mode captured when the CURRENT run started
 let overlayTimer = null;
-let lastRun = { score: 0, floors: 0 };
+let lastRun = { score: 0, floors: 0, mode };
+let startToken = 0;        // monotonic id: only the latest start() may reset
+let starting = false;      // true while a Daily seed is being fetched
 
 audio.setMuted(Storage.muted());
 ui.setSoundIcon(Storage.muted());
@@ -42,19 +45,24 @@ const game = new Game({
     onScore: (s, combo) => { ui.setScore(s); ui.setCombo(combo); ui.pulseScore(); },
     onWorld: (world) => { background.setWorld(world); },
     onGameOver: (score, floors, cheated) => {
-      lastRun = { score, floors };
+      // Capture the mode the run was actually played in — the mode toggle may
+      // change afterwards, so `runMode` (not the live `mode`) is authoritative
+      // for submission, board refresh, and share text.
+      const playedMode = runMode;
+      lastRun = { score, floors, mode: playedMode };
       Storage.addScore(score);
-      // Submit to the global board (no-ops until WORKER_URL is set), then
+      const isDaily = playedMode === 'daily';
+      // Submit to the matching board (no-ops until WORKER_URL is set), then
       // refresh the panel with the latest standings. The `cheated` flag lets
-      // the Worker keep cheated runs off the global board (see BLOCK_CHEATED).
-      submitScore(Storage.name() || 'anon', score, cheated)
-        .then(() => refreshRemoteBoard())
+      // the Worker keep cheated runs off the board (see BLOCK_CHEATED).
+      submitScore(Storage.name() || 'anon', score, cheated, isDaily)
+        .then(() => refreshRemoteBoard(isDaily))
         .catch(() => {});
       clearTimeout(overlayTimer);
       // Let the tower collapse play out before the panel slides in.
       overlayTimer = setTimeout(() => {
         ui.showGameOver(score, floors);
-        refreshRemoteBoard();
+        refreshRemoteBoard(isDaily);
       }, 700);
     },
   },
@@ -70,7 +78,9 @@ const cheatMenu = new CheatMenu({
 // Share the last run (native share sheet on mobile, clipboard fallback).
 async function shareRun(){
   const url = location.href.split('#')[0];
-  const board = mode === 'daily' ? " on today's board" : '';
+  // Use the mode the run was played in, not the (possibly toggled) live mode,
+  // so the shared message can't claim a Daily result for an Endless run.
+  const board = lastRun.mode === 'daily' ? " on today's board" : '';
   const text = `I stacked ${lastRun.score} pts (${lastRun.floors} floors)${board} in StackFall! Beat that 👉`;
   if (navigator.share){
     try { await navigator.share({ title: 'StackFall', text, url }); }
@@ -85,13 +95,17 @@ async function shareRun(){
   }
 }
 
-// Pull the global leaderboard when a Worker is configured; otherwise the
-// local "Your Best Runs" board (already rendered) stays in place.
-async function refreshRemoteBoard(){
+// Pull the leaderboard for the given competition when a Worker is configured;
+// otherwise the local "Your Best Runs" board (already rendered) stays in place.
+// Defaults to the currently selected mode so the title-screen board matches the
+// mode toggle.
+async function refreshRemoteBoard(daily = mode === 'daily'){
   if (!WORKER_URL) return;
   try {
-    const data = await fetchLeaderboard();
-    if (data && Array.isArray(data.scores)) ui.renderRemoteScores(data.scores, Storage.name());
+    const data = await fetchLeaderboard(daily);
+    if (data && Array.isArray(data.scores)){
+      ui.renderRemoteScores(data.scores, Storage.name(), data.scope || (daily ? 'daily' : 'all'));
+    }
   } catch (e) { /* stay on local board */ }
 }
 
@@ -111,20 +125,51 @@ game.buildDemo();
 background.setWorld(worldFor(0));
 refreshRemoteBoard();   // show global scores on the title screen if online
 
-async function seedForMode(){
-  if (mode === 'daily') return await fetchDailySeed();
+async function seedForMode(forMode){
+  if (forMode === 'daily') return await fetchDailySeed();
   return (Math.floor(Math.random() * 0xffffffff) >>> 0) || 1;
 }
 
 async function start(){
+  // Ignore taps that arrive while a Daily seed is still loading — the in-flight
+  // start already owns this attempt (and will time out and fall back if slow).
+  if (starting) return;
   audio.init();
   audio.resume();
   clearTimeout(overlayTimer);
-  ui.hideOverlay();
+
+  // Capture the mode for THIS run up front; the toggle may change afterwards.
+  const forMode = mode;
+  const myToken = ++startToken;
+
+  // For Daily we must await the network seed. Keep the overlay up with a
+  // loading state instead of flashing a blank screen, and disable Start.
+  if (forMode === 'daily'){
+    starting = true;
+    ui.setStarting(true);
+  } else {
+    ui.hideOverlay();
+  }
+
+  const seed = await seedForMode(forMode);
+  starting = false;
+
+  // A newer start() superseded us (e.g. the player re-tapped) — do not reset,
+  // or a stale seed would clobber the newer run.
+  if (myToken !== startToken){
+    ui.setStarting(false);
+    return;
+  }
+
+  if (forMode === 'daily'){
+    ui.setStarting(false);
+    ui.hideOverlay();
+  }
+
+  runMode = forMode;
   ui.setScore(0);
   ui.setCombo(0);
   background.setWorld(worldFor(0));
-  const seed = await seedForMode();
   game.reset(seed);
 }
 
@@ -166,6 +211,9 @@ ui.modeBtn.addEventListener('click', (e) => {
   e.stopPropagation();
   mode = mode === 'daily' ? 'endless' : 'daily';
   ui.setMode(mode);
+  // Show the board for the newly selected competition so the toggle actually
+  // changes what the player is comparing against, not just the seed.
+  refreshRemoteBoard(mode === 'daily');
 });
 
 // Sound toggle (usable mid-run).
