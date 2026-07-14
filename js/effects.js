@@ -11,6 +11,9 @@ export class Effects {
     this.flash = 0;
     this.flashColor = '#ffffff';
     this.shake = 0;
+    // When true, the two most motion-sickness-prone effects — full-screen
+    // flashes and camera shake — are suppressed (honors prefers-reduced-motion).
+    this.reduceMotion = false;
   }
 
   reset(){
@@ -54,11 +57,15 @@ export class Effects {
   }
 
   flashScreen(a = 0.25, color = '#ffffff'){
+    if (this.reduceMotion) return;
     this.flash = Math.max(this.flash, a);
     this.flashColor = color;
   }
 
-  shakeIt(t = 0.12){ this.shake = Math.max(this.shake, t); }
+  shakeIt(t = 0.12){
+    if (this.reduceMotion) return;
+    this.shake = Math.max(this.shake, t);
+  }
 
   update(dt, H){
     for (const p of this.particles){ p.vy += 520 * dt; p.x += p.vx * dt; p.y += p.vy * dt; p.t += dt; }

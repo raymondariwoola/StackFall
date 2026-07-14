@@ -16,10 +16,14 @@
   <canvas id="c"></canvas>
 
   <button id="sound-btn" aria-label="Toggle sound">🔊</button>
+  <button id="pause-btn" aria-label="Pause game" hidden>⏸</button>
   <div id="cheat-badge" hidden>CHEATS ON</div>
 
+  <!-- Screen-reader status announcements (game start / over / paused). -->
+  <div id="sr-status" class="sr-only" role="status" aria-live="polite" aria-atomic="true"></div>
+
   <div id="hud">
-    <div id="score">0</div>
+    <div id="score" aria-hidden="true">0</div>
     <div id="combo">Combo ×2</div>
     <div id="best-chip">Best: 0</div>
   </div>
@@ -27,14 +31,15 @@
   <div id="restart-hint">Tap anywhere to try again</div>
 
   <div id="overlay" class="show">
-    <div class="panel">
+    <div class="panel" role="dialog" aria-modal="true" aria-labelledby="panel-title" aria-describedby="panel-sub">
       <div class="eyebrow">Precision Build</div>
-      <h1>StackFall</h1>
-      <div class="sub">Tap to drop each floor. Land it clean.</div>
+      <h1 id="panel-title">StackFall</h1>
+      <div class="sub" id="panel-sub">Tap to drop each floor. Land it clean.</div>
       <input id="name-input" type="text" maxlength="12" placeholder="Your name" autocomplete="off" autocapitalize="off" spellcheck="false" aria-label="Player name">
       <button id="start-btn">Start</button>
       <button id="share-btn" class="ghost-btn" hidden>Share Score</button>
       <button id="mode-btn" class="ghost-btn">Endless</button>
+      <div class="kbd-hint">Space / Enter to drop · P to pause</div>
       <div class="lb" id="lb-block">
         <div class="lb-title">Top Scores</div>
         <div id="lb-list"></div>
@@ -42,9 +47,37 @@
     </div>
   </div>
 
+  <!-- Pause state: shown on the pause button or when the tab loses focus. -->
+  <div id="pause-overlay">
+    <div class="pause-panel" role="dialog" aria-modal="true" aria-labelledby="pause-title">
+      <div class="eyebrow">Paused</div>
+      <h1 id="pause-title">Take a breath</h1>
+      <div class="sub">Your tower is safe.</div>
+      <button id="resume-btn">Resume</button>
+      <div class="kbd-hint">Tap anywhere or press Space to resume</div>
+    </div>
+  </div>
+
+  <!-- First-run tutorial: shown once, remembered locally. -->
+  <div id="tutorial-overlay">
+    <div class="tut-panel" role="dialog" aria-modal="true" aria-labelledby="tut-title" aria-describedby="tut-desc">
+      <div class="eyebrow">How to Play</div>
+      <h1 id="tut-title">Stack it clean</h1>
+      <div class="tut-stage" aria-hidden="true">
+        <div class="tut-base"></div>
+        <div class="tut-drop"></div>
+      </div>
+      <div class="sub" id="tut-desc">
+        Tap (or press Space) to drop each floor onto the one below. Line it up for a
+        <strong>Perfect</strong> and build your combo. Overhang gets sliced off — miss entirely and the tower falls.
+      </div>
+      <button id="tutorial-btn">Got it</button>
+    </div>
+  </div>
+
   <!-- Secret cheat menu (opened by tapping the title 5× or pressing `) -->
   <div id="cheat-overlay">
-    <div class="cheat-panel">
+    <div class="cheat-panel" role="dialog" aria-modal="true" aria-label="Cheat menu">
       <!-- Passphrase gate -->
       <div id="cheat-lock" class="cheat-view">
         <div class="cheat-eyebrow">Restricted</div>

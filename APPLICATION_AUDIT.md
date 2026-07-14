@@ -94,7 +94,16 @@ token. For meaningful trust, validate a compact server-verifiable replay or
 use a free Cloudflare Turnstile gate for score submission. Keep a visible
 “unverified” label if scores remain client-authoritative.
 
-### High: KV updates can overwrite each other
+### High: KV updates can overwrite each other — ✅ Fixed (2026-07-14)
+
+Resolution: board reads/writes now go through a `Leaderboard` Durable Object
+(`worker/src/index.js`), one instance per board key. Durable Object input gates
+serialize the read → mutate → write, so concurrent submissions to the same board
+can no longer lose each other's scores, and a returned rank is consistent with
+the write that produced it. The Worker falls back to the previous KV path
+automatically when the DO binding is absent, so nothing breaks pre-deploy. The
+DO is SQLite-backed (`new_sqlite_classes` in `worker/wrangler.toml`) so it runs
+on the Workers free plan. Add/read/rank logic is covered by a local test harness.
 
 Evidence: each score reads a board, mutates the local array, and writes it
 back (`worker/src/index.js:96-102`, `worker/src/index.js:138-151`). Cloudflare KV
@@ -231,7 +240,17 @@ the new canvas or make the next landing geometry inconsistent.
 Recommendation: pause briefly on resize and scale/recenter existing layers, or
 restart the current run with a clear “viewport changed” state.
 
-### Low: Accessibility and input feedback are incomplete
+### Low: Accessibility and input feedback are incomplete — ✅ Fixed (2026-07-14)
+
+Resolution: overlays now carry `role="dialog"`/`aria-modal` with `aria-labelledby`
+(start, pause, tutorial, and cheat panels). A new `js/a11y.js` traps Tab focus
+inside the topmost modal and restores focus on close (`setModal`/`clearModal` in
+`js/main.js`), and a visually-hidden `#sr-status` `aria-live="polite"` region
+announces game start, game over (with score/floors), and pause/resume. Visible
+keyboard instructions were added ("Space / Enter to drop · P to pause"), a
+`:focus-visible` ring was added for keyboard users, and `prefers-reduced-motion`
+is honored in CSS (animations) and in the canvas (screen shake + flash gated via
+`effects.reduceMotion`, tracked live).
 
 Evidence: the overlays are plain `div`s (`index.html:29-43`, `46-104`) without
 dialog semantics, focus management, or an accessible live score/status region.
@@ -260,10 +279,12 @@ if fonts are self-hosted later. Keep the game fully usable without the CDN.
 
 ### Player experience
 
-- Add a first-run tutorial overlay with one animated example drop, then allow
-  it to be skipped and remembered locally.
-- Add a pause button and automatic pause/resume on `visibilitychange`, with a
-  clear “Paused” state so switching apps does not cause an accidental miss.
+- ✅ **Done (2026-07-14)** — Add a first-run tutorial overlay with one animated
+  example drop, then allow it to be skipped and remembered locally.
+- ✅ **Done (2026-07-14)** — Add a pause button and automatic pause on
+  `visibilitychange`, with a clear “Paused” state so switching apps does not
+  cause an accidental miss. (Resume is tap/Space/P, not automatic, to avoid a
+  surprise drop on return.)
 - Add a personal run history showing score, floors, mode, date, and best streak;
   keep only a bounded local list.
 - Add daily streaks, personal daily best, and a countdown to the next UTC board.
@@ -307,8 +328,33 @@ if fonts are self-hosted later. Keep the game fully usable without the CDN.
    errors, and strict day keys. (Score submissions remain client-authoritative;
    a server-verifiable replay / Turnstile gate is still outstanding.)
 3. ✅ **Done (2026-07-14)** — Make local storage and daily startup failure-safe.
-4. ⬜ Move leaderboard writes to a serialized Durable Object if the audience
-   grows. (Not started — the KV read-modify-write race remains; still
-   eventually consistent under concurrent writes.)
-5. ⬜ Add pause/visibility handling, accessibility semantics, and a first-run
-   tutorial. (Not started.)
+4. ✅ **Done (2026-07-14)** — Move leaderboard writes to a serialized Durable
+   Object. Implemented as a SQLite-backed `Leaderboard` DO (free-plan eligible),
+   one instance per board, with automatic KV fallback. **Requires a Cloudflare
+   redeploy to take effect** (see the note below).
+5. ✅ **Done (2026-07-14)** — Add pause/visibility handling, accessibility
+   semantics, and a first-run tutorial.
+
+## Cloudflare deployment notes (for items 2 & 4)
+
+The client and Worker code are complete, but the following take effect only
+after the Worker is redeployed:
+
+- **Redeploy the Worker** so the Durable Object migration runs and the new
+  validation/rate-limit/day-key logic ships:
+  `cd worker && npx wrangler deploy`. The first deploy applies migration `v1`
+  (`new_sqlite_classes = ["Leaderboard"]`) automatically.
+- **No new KV namespace or dashboard change is required** — the existing
+  `LEADERBOARD` KV binding is reused for rate-limit counters and as the
+  leaderboard fallback. The Durable Object uses its own built-in storage.
+- **Existing KV board history does not migrate** into the Durable Object; the
+  DO-backed boards start empty on first deploy. If preserving current standings
+  matters, do a one-time copy from KV before cutover (otherwise no action).
+- **Optional tunables** (all have safe defaults in `wrangler.toml`, no change
+  needed): `SCORE_RATE_LIMIT`, `CHEAT_RATE_LIMIT`, `RETENTION_DAYS`,
+  `ALLOW_ORIGIN` (still `*` — tighten to the GitHub Pages origin when ready).
+- **Durable Objects on the free plan**: the DO is SQLite-backed, which is
+  free-plan eligible. If the account is on a very old Workers configuration and
+  the migration is rejected, either enable the current DO/SQLite defaults or
+  simply remove the `[[durable_objects.bindings]]` + `[[migrations]]` blocks —
+  the Worker then transparently falls back to KV.

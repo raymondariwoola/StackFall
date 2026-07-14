@@ -55,7 +55,7 @@ export default {
           }
         }
         const key = daily ? boardKeyDay(day) : boardKeyAll();
-        const scores = (await readBoard(env, key)).slice(0, TOP);
+        const scores = (await boardRead(env, key)).slice(0, TOP);
         return json({ scope: daily ? 'daily' : 'all', day, scores }, 200, cors);
       }
 
@@ -126,14 +126,12 @@ async function handleScore(request, env, cors) {
   // Still return the current standings so the panel can render.
   const blockCheated = (env.BLOCK_CHEATED || '1') !== '0';
   if (body.cheated === true && blockCheated) {
-    const board = await readBoard(env, key);
+    const board = await boardRead(env, key);
     return json({ ok: true, recorded: false, cheated: true, scope: daily ? 'daily' : 'all', day, scores: board.slice(0, TOP) }, 200, cors);
   }
 
   const entry = { name: cleanName(body.name), score, ts: Date.now() };
-  const board = await readBoard(env, key);
-  const res = addTo(board, entry);
-  await writeBoard(env, key, res.list);
+  const res = await boardAdd(env, key, entry);
 
   return json({ ok: true, recorded: true, scope: daily ? 'daily' : 'all', day, rank: res.rank, scores: res.list.slice(0, TOP) }, 200, cors);
 }
@@ -170,17 +168,54 @@ function timingSafeEqual(a, b) {
   return diff === 0;
 }
 
-// ---------- board helpers ----------
+// ---------- board access ----------
+// Reads/writes prefer the Leaderboard Durable Object (serialized, no lost
+// updates) and fall back to KV automatically when the DO binding isn't
+// configured — so the Worker keeps working before/after the DO is deployed.
 function boardKeyAll() { return 'board:all'; }
 function boardKeyDay(day) { return 'board:day:' + day; }
 
-async function readBoard(env, key) {
+async function boardRead(env, key) {
+  if (env.LEADERBOARD_DO) {
+    const r = await doOp(env, { op: 'read', key });
+    return Array.isArray(r.list) ? r.list : [];
+  }
+  return readBoardKV(env, key);
+}
+
+// Atomic read-modify-write of a single board. Inside the DO this is serialized;
+// the KV fallback is the original (eventually consistent) read-then-write.
+async function boardAdd(env, key, entry) {
+  if (env.LEADERBOARD_DO) {
+    const r = await doOp(env, { op: 'add', key, entry });
+    return { list: Array.isArray(r.list) ? r.list : [], rank: r.rank || 0 };
+  }
+  const list = await readBoardKV(env, key);
+  const res = addTo(list, entry);
+  await writeBoardKV(env, key, res.list);
+  return res;
+}
+
+// One DO instance per board key → concurrent submissions to the SAME board are
+// serialized, while different boards (all-time vs each day) run independently.
+function doOp(env, payload) {
+  const id = env.LEADERBOARD_DO.idFromName(payload.key);
+  return env.LEADERBOARD_DO.get(id)
+    .fetch('https://do.internal/board', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    })
+    .then((res) => res.json());
+}
+
+async function readBoardKV(env, key) {
   const raw = await env.LEADERBOARD.get(key);
   if (!raw) return [];
   try { const v = JSON.parse(raw); return Array.isArray(v) ? v : []; }
   catch (e) { return []; }
 }
-async function writeBoard(env, key, list) {
+async function writeBoardKV(env, key, list) {
   await env.LEADERBOARD.put(key, JSON.stringify(list.slice(0, KEEP)));
 }
 function addTo(list, entry) {
@@ -188,6 +223,36 @@ function addTo(list, entry) {
   list.sort((a, b) => b.score - a.score || a.ts - b.ts);   // higher score, then earlier
   const rank = list.indexOf(entry) + 1;
   return { list: list.slice(0, KEEP), rank };
+}
+
+// ---------- Leaderboard Durable Object ----------
+// Serializes board updates. Durable Object input gates guarantee that while a
+// storage op is in flight no other request to this instance is delivered, so
+// the read → mutate → write below is atomic and cannot lose a concurrent score.
+export class Leaderboard {
+  constructor(state, env) {
+    this.state = state;
+    this.env = env;
+  }
+
+  async fetch(request) {
+    let msg;
+    try { msg = await request.json(); } catch (e) { return Response.json({ error: 'bad_request' }, { status: 400 }); }
+    const { op, key, entry } = msg || {};
+    if (!key || typeof key !== 'string') return Response.json({ error: 'bad_key' }, { status: 400 });
+
+    if (op === 'read') {
+      const list = (await this.state.storage.get(key)) || [];
+      return Response.json({ list });
+    }
+    if (op === 'add') {
+      const list = (await this.state.storage.get(key)) || [];
+      const res = addTo(list, entry);
+      await this.state.storage.put(key, res.list);
+      return Response.json({ list: res.list, rank: res.rank });
+    }
+    return Response.json({ error: 'bad_op' }, { status: 400 });
+  }
 }
 
 // ---------- abuse controls ----------

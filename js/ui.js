@@ -14,10 +14,16 @@ export class UI {
     this.combo = document.getElementById('combo');
     this.bestChip = document.getElementById('best-chip');
     this.overlay = document.getElementById('overlay');
+    this.panel = document.querySelector('#overlay .panel');
     this.startBtn = document.getElementById('start-btn');
     this.modeBtn = document.getElementById('mode-btn');
     this.shareBtn = document.getElementById('share-btn');
     this.soundBtn = document.getElementById('sound-btn');
+    this.pauseBtn = document.getElementById('pause-btn');
+    this.pauseOverlay = document.getElementById('pause-overlay');
+    this.resumeBtn = document.getElementById('resume-btn');
+    this.tutorialOverlay = document.getElementById('tutorial-overlay');
+    this.tutorialBtn = document.getElementById('tutorial-btn');
     this.hint = document.getElementById('restart-hint');
     this.lbList = document.getElementById('lb-list');
     this.lbTitle = document.querySelector('.lb-title');
@@ -115,6 +121,15 @@ export class UI {
 
   setSoundIcon(muted){ this.soundBtn.textContent = muted ? '🔇' : '🔊'; }
   setMode(mode){ this.modeBtn.textContent = mode === 'daily' ? 'Daily Board' : 'Endless'; }
+
+  // Pause button is only meaningful during an active run.
+  setPauseButtonVisible(v){ this.pauseBtn.hidden = !v; }
+
+  showPause(){ this.pauseOverlay.classList.add('show'); }
+  hidePause(){ this.pauseOverlay.classList.remove('show'); }
+
+  showTutorial(){ this.tutorialOverlay.classList.add('show'); }
+  hideTutorial(){ this.tutorialOverlay.classList.remove('show'); }
 
   // Loading state while a Daily seed is being fetched: disable Start so a run
   // can't begin (or be spammed) before the seed resolves, and show progress.

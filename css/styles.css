@@ -162,7 +162,7 @@ canvas{ display:block; width:100%; height:100%; position:relative; z-index:0; }
 #name-input::placeholder{ color: var(--ink-dim); }
 #name-input:focus{ border-color: var(--cyan); background: rgba(94,230,214,0.08); }
 
-#start-btn, #retry-btn{
+#start-btn, #retry-btn, #resume-btn, #tutorial-btn{
   font-family:'Space Grotesk', sans-serif;
   font-weight:700;
   font-size: 16px;
@@ -175,7 +175,8 @@ canvas{ display:block; width:100%; height:100%; position:relative; z-index:0; }
   box-shadow: 0 8px 24px rgba(232,163,61,0.3);
   transition: transform .1s ease;
 }
-#start-btn:active{ transform: scale(0.96); }
+#start-btn:active, #resume-btn:active, #tutorial-btn:active{ transform: scale(0.96); }
+#start-btn:disabled{ opacity: 0.6; cursor: progress; box-shadow: none; }
 
 /* secondary ghost button for the mode toggle */
 .ghost-btn{
@@ -221,7 +222,8 @@ canvas{ display:block; width:100%; height:100%; position:relative; z-index:0; }
 /* ---------- Cheat mode ---------- */
 #cheat-badge{
   position:absolute;
-  top: max(14px, env(safe-area-inset-top));
+  /* sits below the pause button (top-right) so the two never overlap */
+  top: calc(max(14px, env(safe-area-inset-top)) + 48px);
   right: 12px;
   z-index: 4;
   padding: 5px 10px;
@@ -351,3 +353,103 @@ canvas{ display:block; width:100%; height:100%; position:relative; z-index:0; }
 .cheat-btn.danger{ background: transparent; border-color: rgba(255,107,107,0.6); color: var(--coral); }
 .cheat-btn.ghost{ background: transparent; border-color: rgba(245,243,236,0.2); color: var(--ink-dim); }
 .cheat-btn:active{ transform: scale(0.96); }
+
+/* ---------- Accessibility ---------- */
+/* Visually hidden but available to screen readers. */
+.sr-only{
+  position:absolute !important;
+  width:1px; height:1px;
+  margin:-1px; padding:0; border:0;
+  clip: rect(0 0 0 0); clip-path: inset(50%);
+  overflow:hidden; white-space:nowrap;
+}
+/* Visible keyboard/controls hint under the primary buttons. */
+.kbd-hint{
+  margin-top: 14px;
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  color: var(--ink-dim);
+}
+/* Clear focus ring for keyboard users (mouse/touch keep it subtle). */
+:focus-visible{ outline: 2px solid var(--cyan); outline-offset: 2px; }
+
+/* ---------- Pause ---------- */
+#pause-btn{
+  position:absolute;
+  top: max(14px, env(safe-area-inset-top));
+  right: 14px;
+  z-index: 4;
+  width: 40px; height: 40px;
+  display:flex; align-items:center; justify-content:center;
+  font-size: 15px; line-height:1;
+  background: rgba(18,23,43,0.55);
+  border: 1px solid rgba(245,243,236,0.14);
+  border-radius: 999px;
+  color: var(--ink);
+  cursor:pointer;
+  pointer-events:auto;
+  backdrop-filter: blur(4px);
+}
+#pause-btn:active{ transform: scale(0.92); }
+
+#pause-overlay{
+  position:absolute; inset:0;
+  display:flex; align-items:center; justify-content:center;
+  background: rgba(18,23,43,0.72);
+  backdrop-filter: blur(3px);
+  opacity:0; pointer-events:none;
+  transition: opacity .25s ease;
+  z-index: 6;
+}
+#pause-overlay.show{ opacity:1; pointer-events:auto; }
+.pause-panel{ width: min(320px, 84vw); text-align:center; }
+.pause-panel h1{ font-family:'Space Grotesk', sans-serif; font-size: 34px; margin: 0 0 4px; }
+.pause-panel .sub{ color: var(--ink-dim); font-size: 13px; margin-bottom: 22px; }
+
+/* ---------- First-run tutorial ---------- */
+#tutorial-overlay{
+  position:absolute; inset:0;
+  display:flex; align-items:center; justify-content:center;
+  background: rgba(8,10,20,0.86);
+  backdrop-filter: blur(5px);
+  opacity:0; pointer-events:none;
+  transition: opacity .25s ease;
+  z-index: 8;
+  padding: 20px;
+}
+#tutorial-overlay.show{ opacity:1; pointer-events:auto; }
+.tut-panel{ width: min(340px, 88vw); text-align:center; }
+.tut-panel h1{ font-family:'Space Grotesk', sans-serif; font-size: 32px; margin: 0 0 8px; }
+.tut-panel .sub{ color: var(--ink-dim); font-size: 13px; line-height: 1.5; margin: 0 0 22px; }
+.tut-panel .sub strong{ color: var(--cyan); font-weight: 600; }
+
+/* Looping "example drop": an amber block falls, lands offset, snaps to a perfect. */
+.tut-stage{ position:relative; width: 180px; height: 120px; margin: 6px auto 18px; }
+.tut-base, .tut-drop{
+  position:absolute; left:50%;
+  width: 96px; height: 22px;
+  border-radius: 5px;
+  transform: translateX(-50%);
+}
+.tut-base{ bottom: 8px; background: var(--cyan); box-shadow: 0 6px 18px rgba(94,230,214,0.3); }
+.tut-drop{ top: 0; background: var(--amber); box-shadow: 0 6px 18px rgba(232,163,61,0.3); animation: tutDrop 2.6s ease-in-out infinite; }
+@keyframes tutDrop{
+  0%   { top: 0;    opacity: 0; transform: translateX(-34%); }
+  12%  { opacity: 1; }
+  50%  { top: 68px; transform: translateX(-34%); }   /* falls, slightly overhanging */
+  66%  { top: 68px; transform: translateX(-50%); }   /* snaps into a perfect landing */
+  100% { top: 68px; transform: translateX(-50%); opacity: 1; }
+}
+
+/* ---------- Reduced motion ---------- */
+@media (prefers-reduced-motion: reduce){
+  *, *::before, *::after{
+    animation-duration: .001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: .001ms !important;
+  }
+  #score.pop{ animation: none; }
+  .tut-drop{ animation: none; top: 68px; opacity: 1; transform: translateX(-50%); }
+  #restart-hint.show{ animation: none; opacity: .6; }
+  #cheat-badge{ animation: none; }
+}

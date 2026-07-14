@@ -2,12 +2,28 @@ name = "stackfall-lb"
 main = "src/index.js"
 compatibility_date = "2024-11-01"
 
-# --- KV leaderboard storage ---------------------------------------------------
-# Create the namespace once, then paste its id below (see README, step B2):
+# --- KV storage ---------------------------------------------------------------
+# Still used for per-IP rate-limit counters, and as the leaderboard fallback if
+# the Durable Object below is ever removed. Create the namespace once, then paste
+# its id below (see README, step B2):
 #  npx wrangler kv namespace create LEADERBOARD
 [[kv_namespaces]]
 binding = "LEADERBOARD"
 id = "c1a7179f0c6d4ed497bdb5c88f8885e8"
+
+# --- Durable Object: serialized leaderboard writes ----------------------------
+# Board reads/writes go through one Durable Object per board, whose input gates
+# serialize concurrent submissions so no score is ever lost (fixes the KV
+# read-modify-write race). SQLite-backed, so it works on the Workers free plan.
+# The Worker falls back to KV automatically if this binding is absent.
+# Deploy the migration with:  npx wrangler deploy
+[[durable_objects.bindings]]
+name = "LEADERBOARD_DO"
+class_name = "Leaderboard"
+
+[[migrations]]
+tag = "v1"
+new_sqlite_classes = ["Leaderboard"]
 
 # --- Tunables (safe to leave as-is) ------------------------------------------
 [vars]

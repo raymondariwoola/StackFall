@@ -7,6 +7,7 @@ const BEST_KEY = 'stackfall_best';
 const SCORES_KEY = 'stackfall_scores';
 const MUTE_KEY = 'stackfall_muted';
 const NAME_KEY = 'stackfall_name';
+const TUTORIAL_KEY = 'stackfall_tutorial_seen';
 
 // In-memory shadow used whenever localStorage is unavailable or throws. The
 // game stays fully playable for the session; only cross-session persistence
@@ -60,4 +61,6 @@ export const Storage = {
   setMuted(m){ safeSet(MUTE_KEY, m ? '1' : '0'); },
   name(){ return safeGet(NAME_KEY) || ''; },
   setName(n){ safeSet(NAME_KEY, (n || '').slice(0, 12)); },
+  tutorialSeen(){ return safeGet(TUTORIAL_KEY) === '1'; },
+  setTutorialSeen(){ safeSet(TUTORIAL_KEY, '1'); },
 };
