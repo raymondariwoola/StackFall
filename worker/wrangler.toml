@@ -4,7 +4,7 @@ compatibility_date = "2024-11-01"
 
 # --- KV leaderboard storage ---------------------------------------------------
 # Create the namespace once, then paste its id below (see README, step B2):
-#   npx wrangler kv namespace create LEADERBOARD
+#  npx wrangler kv namespace create LEADERBOARD
 [[kv_namespaces]]
 binding = "LEADERBOARD"
 id = "c1a7179f0c6d4ed497bdb5c88f8885e8"
