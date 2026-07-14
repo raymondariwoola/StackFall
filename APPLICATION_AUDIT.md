@@ -292,6 +292,7 @@ if fonts are self-hosted later. Keep the game fully usable without the CDN.
   image service.
 - Add an optional high-contrast palette, reduced-motion mode, and a setting to
   disable haptics independently from sound.
+- Add different difficulty modes "Casual or Normal" which is the current gameplay while "Hardcore" has different drop speeds, floor widths, scoring, trickery, unfairness (e.g. invisible floors, moving platforms, etc.), and a local best-by-difficulty record. Cheat menu should still be available in all modes.
 
 ### Competition and retention
 
