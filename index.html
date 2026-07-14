@@ -16,6 +16,7 @@
   <canvas id="c"></canvas>
 
   <button id="sound-btn" aria-label="Toggle sound">🔊</button>
+  <div id="cheat-badge" hidden>CHEATS ON</div>
 
   <div id="hud">
     <div id="score">0</div>
@@ -32,10 +33,72 @@
       <div class="sub">Tap to drop each floor. Land it clean.</div>
       <input id="name-input" type="text" maxlength="12" placeholder="Your name" autocomplete="off" autocapitalize="off" spellcheck="false" aria-label="Player name">
       <button id="start-btn">Start</button>
+      <button id="share-btn" class="ghost-btn" hidden>Share Score</button>
       <button id="mode-btn" class="ghost-btn">Endless</button>
       <div class="lb" id="lb-block">
         <div class="lb-title">Top Scores</div>
         <div id="lb-list"></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Secret cheat menu (opened by tapping the title 5× or pressing `) -->
+  <div id="cheat-overlay">
+    <div class="cheat-panel">
+      <!-- Passphrase gate -->
+      <div id="cheat-lock" class="cheat-view">
+        <div class="cheat-eyebrow">Restricted</div>
+        <h2>Enter Passphrase</h2>
+        <input id="cheat-code" type="password" placeholder="••••••••" autocomplete="off" autocapitalize="off" spellcheck="false" aria-label="Cheat passphrase">
+        <div id="cheat-error" class="cheat-error"></div>
+        <div class="cheat-actions">
+          <button id="cheat-unlock" class="cheat-btn primary">Unlock</button>
+          <button id="cheat-cancel" class="cheat-btn ghost">Cancel</button>
+        </div>
+      </div>
+
+      <!-- Cheat controls -->
+      <div id="cheat-menu" class="cheat-view" hidden>
+        <div class="cheat-eyebrow on">Cheats Active</div>
+        <h2>Cheat Menu</h2>
+        <div class="cheat-grid">
+          <label class="cheat-row"><span>Auto-Perfect</span><input type="checkbox" data-cheat="autoPerfect"></label>
+          <label class="cheat-row"><span>Easy Perfect Window</span><input type="checkbox" data-cheat="easyPerfect"></label>
+          <label class="cheat-row"><span>No Shrink</span><input type="checkbox" data-cheat="noShrink"></label>
+          <label class="cheat-row"><span>Invincible</span><input type="checkbox" data-cheat="invincible"></label>
+          <label class="cheat-row"><span>Slow Motion</span>
+            <select data-cheat-select="timeScale">
+              <option value="1">Off</option>
+              <option value="0.5">0.5×</option>
+              <option value="0.25">0.25×</option>
+            </select>
+          </label>
+          <label class="cheat-row"><span>Score Multiplier</span>
+            <select data-cheat-select="scoreMult">
+              <option value="1">1×</option>
+              <option value="2">2×</option>
+              <option value="5">5×</option>
+              <option value="10">10×</option>
+            </select>
+          </label>
+          <label class="cheat-row"><span>Block Speed</span>
+            <select data-cheat-select="speedOverride">
+              <option value="">Normal ramp</option>
+              <option value="0.5">Slow</option>
+              <option value="1">Fixed 1×</option>
+              <option value="2">Fast</option>
+            </select>
+          </label>
+        </div>
+        <div class="cheat-quick">
+          <button class="cheat-btn" data-cheat-action="floors">+10 Floors</button>
+          <button class="cheat-btn" data-cheat-action="score">+100 pts</button>
+        </div>
+        <div class="cheat-note">Runs are still submitted to the leaderboard.</div>
+        <div class="cheat-actions">
+          <button id="cheat-resume" class="cheat-btn primary">Close</button>
+          <button id="cheat-exit" class="cheat-btn danger">Exit Cheats</button>
+        </div>
       </div>
     </div>
   </div>

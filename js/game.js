@@ -4,6 +4,7 @@
 
 import { CONFIG, blockH, movingY, topScreenY, baseSpeed } from './config.js';
 import { colorForFloor, worldFor, worldIndex } from './palettes.js';
+import { Cheats } from './cheats.js';
 
 export class Game {
   constructor({ view, effects, audio, haptics, rng, callbacks }){
@@ -17,6 +18,7 @@ export class Game {
     this.stack = [];             // [{ x, w, floor }]
     this.moving = null;          // { x, w, dir, speed, floor }
     this.running = false;
+    this.paused = false;         // set while the cheat menu is open
     this.overState = false;
     this.score = 0;
     this.combo = 0;
@@ -64,7 +66,9 @@ export class Game {
   _spawnMoving(){
     const { W } = this.view;
     const top = this.stack[this.stack.length - 1];
-    const mult = Math.min(CONFIG.MAX_SPEED_MULT, 1 + this.floors * CONFIG.SPEED_STEP);
+    const mult = (Cheats.active && Cheats.speedOverride != null)
+      ? Cheats.speedOverride
+      : Math.min(CONFIG.MAX_SPEED_MULT, 1 + this.floors * CONFIG.SPEED_STEP);
     const dir = this.rng.bool() ? 1 : -1;
     this.moving = {
       x: dir === 1 ? 0 : (W - top.w),
@@ -76,9 +80,16 @@ export class Game {
   }
 
   drop(){
-    if (!this.running || !this.moving) return;
+    if (!this.running || this.paused || !this.moving) return;
     const { W, H } = this.view;
     const top = this.stack[this.stack.length - 1];
+
+    // Cheat: snap the swinging block onto the tower before we measure.
+    if (Cheats.on('autoPerfect')){
+      this.moving.w = top.w;
+      this.moving.x = top.x;
+    }
+
     const mLeft = this.moving.x, mRight = this.moving.x + this.moving.w;
     const tLeft = top.x, tRight = top.x + top.w;
 
@@ -91,7 +102,8 @@ export class Game {
     const dropY = movingY(H);
 
     // Total miss — the whole block tumbles and the run ends.
-    if (overlapW <= 2){
+    // Cheat "invincible" turns a miss into a free full-width floor instead.
+    if (overlapW <= 2 && !Cheats.on('invincible')){
       this.effects.addDebris(this.moving.x, dropY, this.moving.w, this.bh, color, this.moving.dir * 80);
       this.audio.cut();
       this.haptics.buzz(60);
@@ -99,9 +111,11 @@ export class Game {
       return;
     }
 
+    const perfectPx = Cheats.on('easyPerfect') ? 1e9 : CONFIG.PERFECT_PX;
     const perfect =
-      Math.abs(mLeft - tLeft) <= CONFIG.PERFECT_PX &&
-      Math.abs(mRight - tRight) <= CONFIG.PERFECT_PX;
+      overlapW > 2 &&
+      Math.abs(mLeft - tLeft) <= perfectPx &&
+      Math.abs(mRight - tRight) <= perfectPx;
 
     let newLayer;
     if (perfect){
@@ -112,7 +126,7 @@ export class Game {
       nx = Math.max(0, Math.min(nx, W - nw));
       newLayer = { x: nx, w: nw, floor };
 
-      const gain = 1 + this.combo;      // streaks snowball the score
+      const gain = (1 + this.combo) * Cheats.mult();   // streaks snowball the score
       this.score += gain;
 
       const cx = tLeft + top.w / 2;
@@ -124,13 +138,21 @@ export class Game {
       this.settle = 1;
       this.audio.perfect(this.combo);
       this.haptics.buzz(this.combo >= 3 ? [0, 18, 20, 18] : 15);
+    } else if (Cheats.on('noShrink') || Cheats.on('invincible')){
+      // Cheat: keep the full width — no slice, no thinning, no death.
+      newLayer = { x: top.x, w: top.w, floor };
+      this.combo = 0;
+      this.score += 1 * Cheats.mult();
+      this.settle = 0.6;
+      this.audio.cut();
+      this.haptics.buzz(10);
     } else {
       // Slice the overhang off into debris; the tower gets thinner.
       if (mLeft < overlapLeft) this.effects.addDebris(mLeft, dropY, overlapLeft - mLeft, this.bh, color, -60);
       if (mRight > overlapRight) this.effects.addDebris(overlapRight, dropY, mRight - overlapRight, this.bh, color, 60);
       newLayer = { x: overlapLeft, w: overlapW, floor };
       this.combo = 0;
-      this.score += 1;
+      this.score += 1 * Cheats.mult();
       this.settle = 0.6;
       this.audio.cut();
       this.haptics.buzz(10);
@@ -186,7 +208,7 @@ export class Game {
     this.bh = blockH(H);
     this.topY = topScreenY(H);
 
-    if (this.running && this.moving){
+    if (this.running && !this.paused && this.moving){
       this.moving.x += this.moving.dir * this.moving.speed * dt;
       if (this.moving.x <= 0){ this.moving.x = 0; this.moving.dir = 1; }
       if (this.moving.x + this.moving.w >= W){ this.moving.x = W - this.moving.w; this.moving.dir = -1; }
@@ -194,5 +216,24 @@ export class Game {
 
     if (this.settle > 0) this.settle = Math.max(0, this.settle - dt * 3);
     this.effects.update(dt, H);
+  }
+
+  // ---------- Cheat actions (invoked from the cheat menu) ----------
+  cheatAddScore(n){
+    if (!this.running) return;
+    this.score += n;
+    if (this.cb.onScore) this.cb.onScore(this.score, this.combo);
+  }
+  cheatAddFloors(n){
+    if (!this.running) return;
+    this.floors += n;
+    this.score += n;
+    const wi = worldIndex(this.floors);
+    if (wi !== this.curWorld){
+      this.curWorld = wi;
+      const world = worldFor(this.floors);
+      if (this.cb.onWorld) this.cb.onWorld(world);
+    }
+    if (this.cb.onScore) this.cb.onScore(this.score, this.combo);
   }
 }

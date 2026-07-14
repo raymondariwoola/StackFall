@@ -214,3 +214,140 @@ canvas{ display:block; width:100%; height:100%; position:relative; z-index:0; }
   color: var(--ink-dim);
   margin-bottom: 8px;
 }
+
+/* the [hidden] attribute must win over display rules like .ghost-btn */
+[hidden]{ display: none !important; }
+
+/* ---------- Cheat mode ---------- */
+#cheat-badge{
+  position:absolute;
+  top: max(14px, env(safe-area-inset-top));
+  right: 12px;
+  z-index: 4;
+  padding: 5px 10px;
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.16em;
+  color: var(--bg);
+  background: var(--coral);
+  border-radius: 999px;
+  pointer-events: none;
+  box-shadow: 0 0 18px rgba(255,107,107,0.5);
+  animation: badgePulse 1.6s ease-in-out infinite;
+}
+@keyframes badgePulse{ 0%,100%{ opacity:.85; } 50%{ opacity:1; } }
+
+/* long-pressable title feels tappable but stays subtle */
+.panel h1{ cursor: default; }
+
+#cheat-overlay{
+  position:absolute; inset:0;
+  display:flex; align-items:center; justify-content:center;
+  background: rgba(8,10,20,0.82);
+  backdrop-filter: blur(5px);
+  opacity:0; pointer-events:none;
+  transition: opacity .2s ease;
+  z-index: 10;
+  padding: 20px;
+}
+#cheat-overlay.show{ opacity:1; pointer-events:auto; }
+.cheat-panel{
+  width: min(360px, 90vw);
+  max-height: 86vh;
+  overflow-y: auto;
+  background: linear-gradient(180deg, rgba(23,29,52,0.96), rgba(18,23,43,0.96));
+  border: 1px solid rgba(255,107,107,0.35);
+  border-radius: 18px;
+  padding: 22px;
+  box-shadow: 0 24px 60px rgba(0,0,0,0.55);
+}
+.cheat-view h2{
+  font-family:'Space Grotesk', sans-serif;
+  font-size: 26px;
+  margin: 0 0 16px;
+}
+.cheat-eyebrow{
+  font-size: 11px;
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+  color: var(--coral);
+  margin-bottom: 8px;
+}
+.cheat-eyebrow.on{ color: var(--cyan); }
+.cheat-error{
+  min-height: 16px;
+  margin: 8px 0 2px;
+  font-size: 12px;
+  color: var(--coral);
+}
+#cheat-code{
+  display:block; width:100%;
+  text-align:center;
+  font-family:'IBM Plex Mono', monospace;
+  font-size: 15px; letter-spacing: 0.2em;
+  color: var(--ink);
+  background: rgba(245,243,236,0.06);
+  border: 1px solid rgba(245,243,236,0.18);
+  border-radius: 10px;
+  padding: 12px;
+  outline: none;
+}
+#cheat-code:focus{ border-color: var(--coral); }
+
+.cheat-grid{
+  display:flex; flex-direction:column; gap: 2px;
+  margin-bottom: 14px;
+}
+.cheat-row{
+  display:flex; align-items:center; justify-content:space-between;
+  gap: 12px;
+  padding: 9px 2px;
+  font-size: 13px;
+  border-bottom: 1px solid rgba(245,243,236,0.07);
+}
+.cheat-row span{ color: var(--ink); }
+.cheat-row input[type="checkbox"]{
+  width: 20px; height: 20px;
+  accent-color: var(--cyan);
+  cursor:pointer;
+}
+.cheat-row select{
+  font-family:'IBM Plex Mono', monospace;
+  font-size: 12px;
+  color: var(--ink);
+  background: rgba(245,243,236,0.08);
+  border: 1px solid rgba(245,243,236,0.18);
+  border-radius: 8px;
+  padding: 6px 8px;
+  cursor:pointer;
+}
+.cheat-quick{
+  display:flex; gap: 10px;
+  margin-bottom: 14px;
+}
+.cheat-quick .cheat-btn{ flex: 1; }
+.cheat-note{
+  font-size: 11px;
+  color: var(--ink-dim);
+  text-align:center;
+  margin-bottom: 16px;
+}
+.cheat-actions{
+  display:flex; gap: 10px;
+}
+.cheat-btn{
+  flex: 1;
+  font-family:'Space Grotesk', sans-serif;
+  font-weight: 700;
+  font-size: 14px;
+  padding: 12px 16px;
+  border: 1px solid transparent;
+  border-radius: 999px;
+  cursor: pointer;
+  color: var(--ink);
+  background: rgba(245,243,236,0.10);
+}
+.cheat-btn.primary{ background: var(--cyan); color: var(--bg); }
+.cheat-btn.danger{ background: transparent; border-color: rgba(255,107,107,0.6); color: var(--coral); }
+.cheat-btn.ghost{ background: transparent; border-color: rgba(245,243,236,0.2); color: var(--ink-dim); }
+.cheat-btn:active{ transform: scale(0.96); }

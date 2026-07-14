@@ -11,9 +11,11 @@ import { AudioEngine } from './audio.js';
 import { Haptics } from './haptics.js';
 import { Storage } from './storage.js';
 import { UI } from './ui.js';
-import { RNG, dailySeed } from './rng.js';
+import { RNG } from './rng.js';
 import { worldFor } from './palettes.js';
 import { fetchDailySeed, submitScore, fetchLeaderboard, WORKER_URL } from './leaderboard.js';
+import { Cheats } from './cheats.js';
+import { CheatMenu } from './cheatmenu.js';
 
 const canvas = document.getElementById('c');
 const ctx = canvas.getContext('2d');
@@ -28,6 +30,7 @@ const rng = new RNG((Date.now() >>> 0) || 1);
 
 let mode = 'endless';      // 'endless' | 'daily'
 let overlayTimer = null;
+let lastRun = { score: 0, floors: 0 };
 
 audio.setMuted(Storage.muted());
 ui.setSoundIcon(Storage.muted());
@@ -39,6 +42,7 @@ const game = new Game({
     onScore: (s, combo) => { ui.setScore(s); ui.setCombo(combo); ui.pulseScore(); },
     onWorld: (world) => { background.setWorld(world); },
     onGameOver: (score, floors) => {
+      lastRun = { score, floors };
       Storage.addScore(score);
       // Submit to the global board (no-ops until WORKER_URL is set), then
       // refresh the panel with the latest standings.
@@ -54,6 +58,31 @@ const game = new Game({
     },
   },
 });
+
+// Secret cheat menu. Opening it pauses the swinging block; closing resumes.
+const cheatMenu = new CheatMenu({
+  game,
+  onOpen: () => { game.paused = true; },
+  onClose: () => { game.paused = false; },
+});
+
+// Share the last run (native share sheet on mobile, clipboard fallback).
+async function shareRun(){
+  const url = location.href.split('#')[0];
+  const board = mode === 'daily' ? " on today's board" : '';
+  const text = `I stacked ${lastRun.score} pts (${lastRun.floors} floors)${board} in StackFall! Beat that 👉`;
+  if (navigator.share){
+    try { await navigator.share({ title: 'StackFall', text, url }); }
+    catch (e) { /* user dismissed the sheet */ }
+    return;
+  }
+  try {
+    await navigator.clipboard.writeText(`${text} ${url}`);
+    ui.flashShare('Copied!');
+  } catch (e) {
+    window.prompt('Copy your score:', `${text} ${url}`);
+  }
+}
 
 // Pull the global leaderboard when a Worker is configured; otherwise the
 // local "Your Best Runs" board (already rendered) stays in place.
@@ -126,6 +155,10 @@ window.addEventListener('keydown', (e) => {
 ui.startBtn.addEventListener('pointerdown', (e) => e.stopPropagation());
 ui.startBtn.addEventListener('click', (e) => { e.stopPropagation(); start(); });
 
+// Share button (game-over only).
+ui.shareBtn.addEventListener('pointerdown', (e) => e.stopPropagation());
+ui.shareBtn.addEventListener('click', (e) => { e.stopPropagation(); shareRun(); });
+
 // Mode toggle (applies to the next run).
 ui.modeBtn.addEventListener('pointerdown', (e) => e.stopPropagation());
 ui.modeBtn.addEventListener('click', (e) => {
@@ -152,9 +185,11 @@ function frame(ts){
   const dt = Math.min(0.033, (ts - last) / 1000);
   last = ts;
 
-  game.update(dt);
+  // Slow-motion cheat scales gameplay time (visuals included).
+  const gdt = dt * Cheats.ts();
+  game.update(gdt);
   const cameraY = game.floors * (game.bh || 30);
-  background.update(dt, cameraY, view.W, view.H);
+  background.update(gdt, cameraY, view.W, view.H);
   renderer.draw(game, background, effects, view);
 
   requestAnimationFrame(frame);

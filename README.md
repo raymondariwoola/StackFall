@@ -150,10 +150,53 @@ curl https://stackfall-lb.YOURNAME.workers.dev/daily
 | GET    | `/leaderboard`        | `{ scope:"all", day, scores:[…20] }`                 |
 | GET    | `/leaderboard?daily=1`| `{ scope:"daily", day, scores:[…20] }`               |
 | POST   | `/score`              | `{ ok, rank, dailyRank, scores:[…20] }`              |
+| POST   | `/cheat`              | `{ ok }` validates the cheat passphrase             |
 
 `POST /score` body: `{ name, score, day, ts }` with an `X-Sig` header (the client
 sets both automatically). The Worker sanitizes names, rejects implausible scores,
 and stores the top 50 per board in KV.
+
+---
+
+## Secret cheat menu
+
+There's a hidden cheat menu, gated by a passphrase you control.
+
+**Enable it** (otherwise it's off and the passphrase always fails):
+
+```bash
+cd worker
+npx wrangler secret put CHEAT_CODE     # you'll be prompted to type the phrase
+npx wrangler deploy
+```
+
+Using `wrangler secret` keeps the phrase out of the repo. (For local-only dev
+with no Worker, the fallback phrase is `LOCAL_CHEAT_CODE` in
+[`js/leaderboard.js`](js/leaderboard.js), default `iddqd`.)
+
+**Open it:** on the title or game-over screen, tap the **“StackFall” title 5×**
+quickly — or press the **`` ` ``** (backtick) key on desktop. Enter the
+passphrase to reveal the menu.
+
+**Cheats available:** Auto-Perfect, Easy Perfect Window, No Shrink, Invincible
+(a miss won't end the run), Slow Motion (0.5×/0.25×), Score Multiplier
+(2×/5×/10×), a Block-Speed override, and quick **+10 Floors / +100 pts** buttons.
+A red **CHEATS ON** badge shows while any cheat is engaged.
+
+- **Close** keeps your cheats on across runs; **Exit Cheats** turns everything
+  off. The passphrase is remembered for the browser session, so you only enter
+  it once.
+- **Cheated runs still post to the leaderboard** — by design. If you'd rather
+  keep them off the board, have the client send a `cheated: true` flag on
+  `/score` and skip the KV write server-side (a ~3-line change in
+  [`worker/src/index.js`](worker/src/index.js)).
+
+## Share button
+
+After each run the game-over panel shows **Share Score**, which opens the native
+share sheet on mobile (`navigator.share`) or copies a "beat that" message + your
+site URL to the clipboard on desktop. In **Daily** mode the text calls out
+"today's board" to fuel the challenge loop.
 
 ---
 

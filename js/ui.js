@@ -16,6 +16,7 @@ export class UI {
     this.overlay = document.getElementById('overlay');
     this.startBtn = document.getElementById('start-btn');
     this.modeBtn = document.getElementById('mode-btn');
+    this.shareBtn = document.getElementById('share-btn');
     this.soundBtn = document.getElementById('sound-btn');
     this.hint = document.getElementById('restart-hint');
     this.lbList = document.getElementById('lb-list');
@@ -59,6 +60,7 @@ export class UI {
     this.h1.textContent = 'StackFall';
     this.sub.textContent = 'Tap to drop each floor. Land it clean.';
     this.startBtn.textContent = 'Start';
+    this.shareBtn.hidden = true;
     this.overlay.classList.add('show');
     this.hint.classList.remove('show');
   }
@@ -70,10 +72,19 @@ export class UI {
     this.h1.textContent = score + ' pts';
     this.sub.textContent = `${floors} floors · ${isBest ? 'New personal best!' : 'Best ' + best + ' pts'}`;
     this.startBtn.textContent = 'Retry';
+    this.shareBtn.textContent = 'Share Score';
+    this.shareBtn.hidden = false;
     this.refreshBest();
     this.renderLeaderboard();
     this.overlay.classList.add('show');
     this.hint.classList.add('show');
+  }
+
+  // Briefly change the share button label (e.g. "Copied!").
+  flashShare(msg){
+    this.shareBtn.textContent = msg;
+    clearTimeout(this._shareT);
+    this._shareT = setTimeout(() => { this.shareBtn.textContent = 'Share Score'; }, 1400);
   }
 
   hideOverlay(){

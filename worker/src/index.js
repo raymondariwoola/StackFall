@@ -46,6 +46,10 @@ export default {
         return await handleScore(request, env, cors);
       }
 
+      if (url.pathname === '/cheat' && request.method === 'POST') {
+        return await handleCheat(request, env, cors);
+      }
+
       return json({ ok: false, error: 'not_found' }, 404, cors);
     } catch (err) {
       return json({ ok: false, error: 'server_error', detail: String(err && err.message || err) }, 500, cors);
@@ -90,6 +94,33 @@ async function handleScore(request, env, cors) {
   await writeBoard(env, boardKeyDay(day), dayRes.list);
 
   return json({ ok: true, rank: allRes.rank, dailyRank: dayRes.rank, scores: allRes.list.slice(0, TOP) }, 200, cors);
+}
+
+// ---------- /cheat ----------
+async function handleCheat(request, env, cors) {
+  const secret = env.CHEAT_CODE || '';
+  if (!secret) return json({ ok: false, error: 'cheats_disabled' }, 403, cors);
+
+  let code = '';
+  try { code = (await request.json()).code || ''; } catch (e) { code = ''; }
+  if (typeof code !== 'string') code = '';
+
+  const ok = timingSafeEqual(code, secret);
+  return json({ ok }, ok ? 200 : 401, cors);
+}
+
+// Length-independent, constant-time-ish string compare to avoid leaking the
+// passphrase length/prefix via response timing.
+function timingSafeEqual(a, b) {
+  const enc = new TextEncoder();
+  const ba = enc.encode(a);
+  const bb = enc.encode(b);
+  let diff = ba.length ^ bb.length;
+  const n = Math.max(ba.length, bb.length);
+  for (let i = 0; i < n; i++) {
+    diff |= (ba[i] || 0) ^ (bb[i] || 0);
+  }
+  return diff === 0;
 }
 
 // ---------- board helpers ----------
