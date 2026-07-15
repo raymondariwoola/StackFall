@@ -1,0 +1,46 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#12172B">
+<title>StackFall — Leaderboard</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect width='32' height='32' rx='7' fill='%2312172B'/><rect x='7' y='6' width='18' height='5' rx='1.5' fill='%23FF9457'/><rect x='6' y='13' width='20' height='5' rx='1.5' fill='%235EE6D6'/><rect x='8' y='20' width='16' height='5' rx='1.5' fill='%23E8A33D'/></svg>">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="css/styles.css">
+</head>
+<body class="lb-page">
+<div id="lb-wrap">
+  <header class="lb-head">
+    <a href="index.html" id="back-link" class="ghost-btn">← Play</a>
+    <div class="eyebrow">Leaderboard</div>
+    <h1 id="lb-heading">All-Time Normal</h1>
+    <div class="sub" id="lb-sub">Top 20 · Normal and Hardcore are ranked separately.</div>
+  </header>
+
+  <!-- Filters. Selection is mirrored into the URL so a board is shareable. -->
+  <div class="lb-filters">
+    <div class="lb-seg" id="scope-seg" role="group" aria-label="Competition">
+      <button class="seg-btn active" data-scope="all">Endless</button>
+      <button class="seg-btn" data-scope="daily">Daily</button>
+    </div>
+    <div class="lb-seg" id="diff-seg" role="group" aria-label="Difficulty">
+      <button class="seg-btn active" data-difficulty="normal">Normal</button>
+      <button class="seg-btn" data-difficulty="hardcore">Hardcore</button>
+    </div>
+  </div>
+
+  <div id="lb-status" class="lb-status" role="status" aria-live="polite">Loading…</div>
+  <div id="lb-full" class="lb-full"></div>
+
+  <footer class="lb-foot">
+    <span id="lb-health" class="health" hidden><span class="health-dot"></span><span id="lb-health-text"></span></span>
+    <div class="kbd-hint">Scores are client-reported and unverified.</div>
+  </footer>
+</div>
+
+<script type="module" src="js/leaderboard-page.js"></script>
+</body>
+</html>

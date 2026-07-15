@@ -3,9 +3,15 @@
 // Routes (all JSON, CORS-open):
 //   GET  /                     → info / health
 //   GET  /daily                → { seed, day }         deterministic per UTC day
-//   GET  /leaderboard          → { scope:'all',   day, scores:[…20] }
-//   GET  /leaderboard?daily=1  → { scope:'daily', day, scores:[…20] }
-//   POST /score                → { ok, rank, scores:[…20] }
+//   GET  /leaderboard          → { scope:'all',   day, difficulty, scores:[…20] }
+//   GET  /leaderboard?daily=1  → { scope:'daily', day, difficulty, scores:[…20] }
+//     …&difficulty=normal|hardcore  (default 'normal')
+//   POST /score                → { ok, rank, scope, difficulty, scores:[…20] }
+//
+// Boards are keyed by BOTH competition and difficulty, because mixing them
+// compares incomparable runs: perfect landings score (1+combo), so Normal's
+// wider blocks / looser window sustain long streaks that Hardcore's spikes and
+// shot clock break — its 2× multiplier doesn't come close to compensating.
 //
 // Storage: a single Workers KV namespace (binding LEADERBOARD). Each board is
 // one JSON array kept trimmed to the top 50. This is intentionally simple and
@@ -41,6 +47,14 @@ export default {
         // Reject pathologically long query strings outright.
         if (url.search.length > 128) return json({ ok: false, error: 'bad_request' }, 400, cors);
 
+        // Strict on this public read surface: an unknown difficulty is a 400
+        // rather than a silent fall-through to the wrong board.
+        const diffParam = url.searchParams.get('difficulty');
+        if (diffParam != null && !isValidDifficulty(diffParam)) {
+          return json({ ok: false, error: 'bad_difficulty' }, 400, cors);
+        }
+        const difficulty = diffParam || 'normal';
+
         const daily = url.searchParams.get('daily') === '1' || url.searchParams.get('scope') === 'daily';
         let day = dailySeedString();
         if (daily) {
@@ -54,9 +68,9 @@ export default {
             day = dayParam;
           }
         }
-        const key = daily ? boardKeyDay(day) : boardKeyAll();
+        const key = daily ? boardKeyDay(day, difficulty) : boardKeyAll(difficulty);
         const scores = (await boardRead(env, key)).slice(0, TOP);
-        return json({ scope: daily ? 'daily' : 'all', day, scores }, 200, cors);
+        return json({ scope: daily ? 'daily' : 'all', day, difficulty, scores }, 200, cors);
       }
 
       if (url.pathname === '/score' && request.method === 'POST') {
@@ -118,22 +132,24 @@ async function handleScore(request, env, cors) {
   // The run's competition. Endless runs write only to the all-time board;
   // Daily runs write only to today's board. This keeps the two competitions
   // genuinely separate (an Endless run can no longer land on the Daily board).
+  // Difficulty splits them again, so Normal and Hardcore never share a board.
   const daily = body.daily === true;
+  const difficulty = cleanDifficulty(body.difficulty);
   const day = dailySeedString();           // server-authoritative day for the run
-  const key = daily ? boardKeyDay(day) : boardKeyAll();
+  const key = daily ? boardKeyDay(day, difficulty) : boardKeyAll(difficulty);
 
   // Cheated runs: keep them off the board when BLOCK_CHEATED is on (default).
   // Still return the current standings so the panel can render.
   const blockCheated = (env.BLOCK_CHEATED || '1') !== '0';
   if (body.cheated === true && blockCheated) {
     const board = await boardRead(env, key);
-    return json({ ok: true, recorded: false, cheated: true, scope: daily ? 'daily' : 'all', day, scores: board.slice(0, TOP) }, 200, cors);
+    return json({ ok: true, recorded: false, cheated: true, scope: daily ? 'daily' : 'all', day, difficulty, scores: board.slice(0, TOP) }, 200, cors);
   }
 
   const entry = { name: cleanName(body.name), score, ts: Date.now() };
   const res = await boardAdd(env, key, entry);
 
-  return json({ ok: true, recorded: true, scope: daily ? 'daily' : 'all', day, rank: res.rank, scores: res.list.slice(0, TOP) }, 200, cors);
+  return json({ ok: true, recorded: true, scope: daily ? 'daily' : 'all', day, difficulty, rank: res.rank, total: res.list.length, scores: res.list.slice(0, TOP) }, 200, cors);
 }
 
 // ---------- /cheat ----------
@@ -172,8 +188,8 @@ function timingSafeEqual(a, b) {
 // Reads/writes prefer the Leaderboard Durable Object (serialized, no lost
 // updates) and fall back to KV automatically when the DO binding isn't
 // configured — so the Worker keeps working before/after the DO is deployed.
-function boardKeyAll() { return 'board:all'; }
-function boardKeyDay(day) { return 'board:day:' + day; }
+function boardKeyAll(difficulty) { return 'board:all:' + difficulty; }
+function boardKeyDay(day, difficulty) { return 'board:day:' + day + ':' + difficulty; }
 
 async function boardRead(env, key) {
   if (env.LEADERBOARD_DO) {
@@ -312,6 +328,11 @@ function retentionDays(env) {
 }
 
 // ---------- validation ----------
+function isValidDifficulty(d) { return d === 'normal' || d === 'hardcore'; }
+// Coerce a submitted difficulty (absent/unknown → 'normal'), mirroring how the
+// `daily` flag is coerced. Reads use the strict isValidDifficulty check instead.
+function cleanDifficulty(d) { return d === 'hardcore' ? 'hardcore' : 'normal'; }
+
 function cleanName(n) {
   if (typeof n !== 'string') return 'anon';
   // Whitelist: letters, digits, space, and a few safe marks. Everything else

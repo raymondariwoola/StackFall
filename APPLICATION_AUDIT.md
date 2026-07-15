@@ -359,8 +359,34 @@ if fonts are self-hosted later. Keep the game fully usable without the CDN.
 
 ### Competition and retention
 
+- ✅ **Done (2026-07-15)** — **Split the leaderboard by difficulty, and move the
+  full board to its own page.** Boards are now keyed by competition **and**
+  difficulty (`board:all:<difficulty>`, `board:day:<day>:<difficulty>`), so
+  Normal and Hardcore never share a ranking. This is the same class of defect as
+  the audit's #1 finding: a difficulty-blind board compares incomparable runs.
+  Perfect landings score `(1 + combo)`, so streaks grow **quadratically** —
+  Normal's wider blocks (0.62 vs 0.46) and looser Perfect window (8px vs 5px)
+  sustain long streaks, while Hardcore's spikes reset combos and its shot clock
+  forces sloppy drops. Hardcore's 2× multiplier does not compensate, so Normal
+  would have dominated a mixed board.
+  - **Worker**: `/score` coerces `body.difficulty` (absent/unknown → `normal`,
+    mirroring the `daily` flag); `/leaderboard?difficulty=` is strict on the
+    public read surface and returns `400 bad_difficulty` for anything else.
+    Responses echo `difficulty`, and `/score` returns the run's `rank`.
+    One Durable Object instance per board key, so the split also shards writes.
+  - **Page**: new `leaderboard.html` + `js/leaderboard-page.js` with
+    Endless/Daily × Normal/Hardcore filters, mirrored into the URL
+    (`?scope=daily&difficulty=hardcore`) so any board is deep-linkable and
+    shareable, with working Back/Forward and a "← Play" return link.
+  - **Panel**: the Global tab is now a *compact* summary — your rank + top 3 +
+    a "Full leaderboard →" deep link — which declutters the panel while
+    preserving the game-over → retry loop. Row markup/escaping is shared via
+    `js/board.js` so the two surfaces can't drift.
+  - **Board reset**: the new keys start empty. Done *before* the Durable Object
+    deploy so it costs **one** reset rather than two.
 - Show separate Endless and Daily tabs with the player’s rank and score delta
-  to the next leaderboard position.
+  to the next leaderboard position. *(Partly covered: rank is now shown on both
+  the panel summary and the page; the delta-to-next-position is still open.)*
 - Add a deterministic seed/code view so players can replay a specific daily
   challenge and compare fairly.
 - ✅ **Done (2026-07-14)** — Add achievements for milestones such as 10 floors,
@@ -464,6 +490,31 @@ retry, share, mode, difficulty, pause/resume, settings, board tabs, and tutorial
 priming/resuming the `AudioContext` on the gesture. Sounds honor the existing mute
 (🔊) toggle (`js/audio.js`, `js/main.js`, `js/ui.js`).
 
+### Medium: Anyone could submit scores as "anon" — ✅ Fixed (2026-07-15)
+
+Players could start instantly and submit with no identity: `submitScore` fell
+back to `Storage.name() || 'anon'`, so the board filled with indistinguishable
+"anon" rows.
+
+Resolution: a name is now **required to start any run that can reach a
+leaderboard**. The Start button is disabled while the field is empty (with a
+hint and a highlighted input), `start()` re-checks and refuses defensively, and
+the name is persisted to localStorage as before, so returning players never see
+the gate.
+
+**Practice mode is deliberately exempt** — it submits nothing, so it needs no
+name. That preserves a zero-friction "just let me try" path for first-time
+players, which is what made the original tap-and-play design work; only
+competitive runs must identify themselves.
+
+On the "edit the name before submitting" requirement: the score auto-submits the
+moment a run ends (700ms *before* the panel appears), and re-submitting under a
+new name would duplicate the entry (the board appends; there is no update API).
+Since the name is now chosen deliberately at start, the game-over panel instead
+confirms **"Submitted as NAME ✓ — editing below renames your next run"**, which
+is honest about what the field does rather than implying it can retroactively
+change a submission that already happened.
+
 ## Suggested implementation order
 
 1. ✅ **Done (2026-07-14)** — Fix mode propagation and fetch the correct daily
@@ -494,6 +545,15 @@ after the Worker is redeployed:
 - **Existing KV board history does not migrate** into the Durable Object; the
   DO-backed boards start empty on first deploy. If preserving current standings
   matters, do a one-time copy from KV before cutover (otherwise no action).
+- **Boards are now split by difficulty** (`board:all:<difficulty>`,
+  `board:day:<day>:<difficulty>`), so the old difficulty-blind keys are
+  abandoned. This was deliberately landed **before** the Durable Object deploy
+  so both changes cost a single board reset rather than two. Nothing extra to
+  configure — the keys are derived in code.
+- **Deploy `leaderboard.html` with the site.** It's a static page using relative
+  paths (`css/styles.css`, `js/leaderboard-page.js`), so it works on the
+  `/StackFall/` GitHub Pages subpath with no config. Note for later: the
+  deferred service worker would need to cache **two** HTML entries.
 - **Optional tunables** (all have safe defaults in `wrangler.toml`, no change
   needed): `SCORE_RATE_LIMIT`, `CHEAT_RATE_LIMIT`, `RETENTION_DAYS`,
   `ALLOW_ORIGIN` (still `*` — tighten to the GitHub Pages origin when ready).

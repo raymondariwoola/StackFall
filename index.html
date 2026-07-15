@@ -41,7 +41,9 @@
       <div class="eyebrow">Precision Build</div>
       <h1 id="panel-title">StackFall</h1>
       <div class="sub" id="panel-sub">Tap to drop each floor. Land it clean.</div>
-      <input id="name-input" type="text" maxlength="12" placeholder="Your name" autocomplete="off" autocapitalize="off" spellcheck="false" aria-label="Player name">
+      <input id="name-input" type="text" maxlength="12" placeholder="Your name (required)" autocomplete="off" autocapitalize="off" spellcheck="false" aria-label="Player name" required>
+      <div id="name-hint" class="name-hint"></div>
+      <div id="submitted-as" class="submitted-as" hidden></div>
       <button id="start-btn">Start</button>
       <button id="share-btn" class="ghost-btn" hidden>Share Score</button>
       <div class="toggle-row">
@@ -59,6 +61,7 @@
           <button class="lb-tab" data-tab="global" role="tab" hidden>Global</button>
         </div>
         <div id="lb-list"></div>
+        <a id="full-board-link" href="leaderboard.html" hidden>Full leaderboard →</a>
         <div id="health" class="health" hidden>
           <span class="health-dot"></span><span id="health-text">Online</span>
         </div>

@@ -25,11 +25,16 @@ async function signPayload(obj){
   return { body, sig };
 }
 
-export async function submitScore(name, score, cheated = false, daily = false){
+export async function submitScore(name, score, cheated = false, daily = false, difficulty = 'normal'){
   if (!WORKER_URL) return { ok: false, offline: true };
-  // `daily` tells the Worker which competition this run belongs to. The Worker
-  // decides the authoritative day itself; we send `day` only for context/logs.
-  const payload = { name, score, cheated: !!cheated, daily: !!daily, day: dailySeedString(), ts: Date.now() };
+  // `daily` + `difficulty` tell the Worker which board this run belongs to; it
+  // validates both. The Worker decides the authoritative day itself — we send
+  // `day` only for context/logs.
+  const payload = {
+    name, score, cheated: !!cheated, daily: !!daily,
+    difficulty: difficulty === 'hardcore' ? 'hardcore' : 'normal',
+    day: dailySeedString(), ts: Date.now(),
+  };
   const { body, sig } = await signPayload(payload);
   const res = await fetch(WORKER_URL + '/score', {
     method: 'POST',
@@ -39,11 +44,14 @@ export async function submitScore(name, score, cheated = false, daily = false){
   return res.json();
 }
 
-// Fetch the standings for the requested competition. `daily` selects today's
-// board (`?daily=1`); otherwise the all-time board is returned.
-export async function fetchLeaderboard(daily = false){
+// Fetch the standings for one competition. `daily` selects today's board;
+// `difficulty` selects the Normal or Hardcore board — the two are never mixed.
+export async function fetchLeaderboard(daily = false, difficulty = 'normal'){
   if (!WORKER_URL) return null;
-  const res = await fetch(WORKER_URL + '/leaderboard' + (daily ? '?daily=1' : ''));
+  const q = new URLSearchParams();
+  if (daily) q.set('daily', '1');
+  q.set('difficulty', difficulty === 'hardcore' ? 'hardcore' : 'normal');
+  const res = await fetch(WORKER_URL + '/leaderboard?' + q.toString());
   return res.json();
 }
 

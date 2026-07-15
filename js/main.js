@@ -118,12 +118,19 @@ const game = new Game({
       ui.setPracticeBadge(false);
 
       const isDaily = playedMode === 'daily';
+      const submittedAs = Storage.name() || 'anon';   // the gate guarantees a real name
+      let submittedRank = null;
       if (!practice){
         // Submit to the matching board (no-ops until WORKER_URL is set), then
         // refresh the panel with the latest standings. The `cheated` flag lets
         // the Worker keep cheated runs off the board (see BLOCK_CHEATED).
-        submitScore(Storage.name() || 'anon', score, cheated, isDaily)
-          .then(() => { setHealth('online'); refreshRemoteBoard(isDaily); })
+        // The Worker returns our rank on that board — reuse it for the summary.
+        submitScore(submittedAs, score, cheated, isDaily, playedDifficulty)
+          .then((res) => {
+            setHealth('online');
+            submittedRank = (res && res.rank) || null;
+            refreshRemoteBoard(isDaily, playedDifficulty, submittedRank);
+          })
           .catch(() => setHealth('offline'));
       }
       clearTimeout(overlayTimer);
@@ -133,10 +140,13 @@ const game = new Game({
 
       // Let the tower collapse play out before the panel slides in.
       overlayTimer = setTimeout(() => {
-        ui.showGameOver(score, floors, { newBest: isNewBest, mode: playedMode, practice, modeBest: prevModeBest });
+        ui.showGameOver(score, floors, {
+          newBest: isNewBest, mode: playedMode, practice,
+          modeBest: prevModeBest, submittedAs: practice ? null : submittedAs,
+        });
         if (isNewBest) celebrateBest();
         setModal(ui.panel, ui.startBtn);
-        if (!practice) refreshRemoteBoard(isDaily);
+        if (!practice) refreshRemoteBoard(isDaily, playedDifficulty, submittedRank);
       }, 700);
     },
   },
@@ -206,12 +216,16 @@ async function shareRun(){
 // otherwise the local "Your Best Runs" board (already rendered) stays in place.
 // Defaults to the currently selected mode so the title-screen board matches the
 // mode toggle.
-async function refreshRemoteBoard(daily = mode === 'daily'){
+// `daily`/`diff` pick the board. Practice has no board of its own, so it shows
+// the all-time board for the selected difficulty.
+async function refreshRemoteBoard(daily = mode === 'daily', diff = difficulty, rank = null){
   if (!WORKER_URL) return;
   try {
-    const data = await fetchLeaderboard(daily);
+    const data = await fetchLeaderboard(daily, diff);
     if (data && Array.isArray(data.scores)){
-      ui.renderRemoteScores(data.scores, Storage.name(), data.scope || (daily ? 'daily' : 'all'));
+      ui.renderRemoteScores(data.scores, Storage.name(), {
+        daily, difficulty: data.difficulty || diff, rank,
+      });
       ui.enableGlobalTab();   // reveal + default to the Global tab once online
       setHealth('online');
     }
@@ -331,6 +345,14 @@ async function start(){
   // Ignore taps that arrive while a Daily seed is still loading — the in-flight
   // start already owns this attempt (and will time out and fall back if slow).
   if (starting) return;
+  // A name is required for anything that can reach a leaderboard. Practice is
+  // exempt, so a first-time player can still try the game with zero friction.
+  if (ui.nameBlocked()){
+    ui.updateNameGate();
+    ui.nameInput.focus();
+    announce('Enter a name to play, or switch mode to Practice.');
+    return;
+  }
   audio.init();
   audio.resume();
   clearTimeout(overlayTimer);
@@ -379,6 +401,7 @@ async function start(){
   ui.setCombo(0);
   ui.setPauseButtonVisible(true);
   ui.setPracticeBadge(forMode === 'practice');   // explicit, persistent label
+  ui.submittedAs.hidden = true;                  // stale from the previous run
   background.setWorld(worldFor(0));
   game.reset(seed);
   const diffLabel = difficulty === 'hardcore' ? ' hardcore' : '';
@@ -479,7 +502,7 @@ ui.modeBtn.addEventListener('click', (e) => {
   // Show the board for the newly selected competition so the toggle actually
   // changes what the player is comparing against, not just the seed.
   // Practice has no board of its own — show the all-time one.
-  refreshRemoteBoard(mode === 'daily');
+  refreshRemoteBoard(mode === 'daily', difficulty);
 });
 
 // Difficulty toggle (applies to the next run).
@@ -492,6 +515,8 @@ ui.difficultyBtn.addEventListener('click', (e) => {
   Storage.setDifficulty(difficulty);
   ui.setDifficulty(difficulty);
   updateStats();
+  // Normal and Hardcore are separate boards — show the one you're playing.
+  refreshRemoteBoard(mode === 'daily', difficulty);
 });
 
 // Sound toggle (usable mid-run).

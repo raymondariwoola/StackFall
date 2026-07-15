@@ -2,12 +2,7 @@
 
 import { Storage } from './storage.js';
 import { ACHIEVEMENTS } from './achievements.js';
-
-function escapeHtml(s){
-  return String(s).replace(/[&<>"']/g, (c) => (
-    { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]
-  ));
-}
+import { escapeHtml, renderScoreRows, boardLabel } from './board.js';
 
 export class UI {
   constructor(){
@@ -42,6 +37,9 @@ export class UI {
     this.toast = document.getElementById('toast');
     this.health = document.getElementById('health');
     this.healthText = document.getElementById('health-text');
+    this.nameHint = document.getElementById('name-hint');
+    this.submittedAs = document.getElementById('submitted-as');
+    this.fullBoardLink = document.getElementById('full-board-link');
     this._click = () => {};   // click-sound hook, injected by main.js
     this._toastQueue = [];
     this._toastBusy = false;
@@ -55,7 +53,9 @@ export class UI {
 
     // Board tabs: Best (local) · History (personal runs) · Global (remote).
     this.currentTab = 'best';
-    this._remote = { scores: [], myName: '', scope: 'all' };
+    this._remote = { scores: [], myName: '', daily: false, difficulty: 'normal', rank: 0 };
+    this._mode = 'endless';
+    this._difficulty = 'normal';
     this.lbTabs.querySelectorAll('.lb-tab').forEach((btn) => {
       btn.addEventListener('pointerdown', (e) => e.stopPropagation());
       btn.addEventListener('click', (e) => { e.stopPropagation(); this._click(); this.selectTab(btn.dataset.tab); });
@@ -64,7 +64,10 @@ export class UI {
     // Name field: persist as you type, and don't let taps fall through to
     // the "tap anywhere to start" handler on the wrap.
     this.nameInput.value = Storage.name();
-    this.nameInput.addEventListener('input', () => Storage.setName(this.nameInput.value.trim()));
+    this.nameInput.addEventListener('input', () => {
+      Storage.setName(this.nameInput.value.trim());
+      this.updateNameGate();
+    });
     this.nameInput.addEventListener('pointerdown', (e) => e.stopPropagation());
 
     this.refreshBest();
@@ -128,6 +131,19 @@ export class UI {
     this.shareBtn.textContent = 'Share Score';
     // Nothing to share for a practice run — it isn't recorded anywhere.
     this.shareBtn.hidden = practice;
+
+    // The score is already submitted under the name chosen at start. Say so
+    // plainly, and be honest that editing the field now applies to the NEXT run
+    // rather than pretending it can change a submission that already happened.
+    if (!practice && opts.submittedAs){
+      this.submittedAs.innerHTML =
+        `Submitted as <strong>${escapeHtml(opts.submittedAs)}</strong> ✓ — editing below renames your next run`;
+      this.submittedAs.hidden = false;
+      this.nameInput.setAttribute('aria-label', 'Player name for your next run');
+    } else {
+      this.submittedAs.hidden = true;
+    }
+    this.updateNameGate();
     this.refreshBest();
     this.renderBoard();
     this.overlay.classList.add('show');
@@ -184,9 +200,28 @@ export class UI {
   }
 
   // Store the latest remote standings; render now if the Global tab is active.
-  renderRemoteScores(scores, myName, scope = 'all'){
-    this._remote = { scores: scores || [], myName: myName || '', scope };
+  // meta: { daily, difficulty, rank }
+  renderRemoteScores(scores, myName, meta = {}){
+    this._remote = {
+      scores: scores || [],
+      myName: myName || '',
+      daily: !!meta.daily,
+      difficulty: meta.difficulty === 'hardcore' ? 'hardcore' : 'normal',
+      // Keep a known rank if this refresh didn't carry one.
+      rank: meta.rank != null ? meta.rank : this._remote.rank,
+    };
+    this.setFullBoardLink(this._remote.daily, this._remote.difficulty);
     if (this.currentTab === 'global') this._renderGlobal();
+  }
+
+  // Point the panel link at the matching board on the standalone page.
+  setFullBoardLink(daily, difficulty){
+    if (!this.fullBoardLink) return;
+    const q = new URLSearchParams();
+    if (daily) q.set('scope', 'daily');
+    if (difficulty === 'hardcore') q.set('difficulty', 'hardcore');
+    this.fullBoardLink.href = 'leaderboard.html' + (q.toString() ? '?' + q.toString() : '');
+    this.fullBoardLink.hidden = false;
   }
 
   // Best: this device's top scores (works fully offline).
@@ -212,14 +247,15 @@ export class UI {
       : '<div class="lb-row"><span>No runs yet</span><span>—</span></div>';
   }
 
-  // Global: remote top scores with names (escaped as defense-in-depth).
+  // Global: a COMPACT summary only — your rank + the top 3 — so the panel stays
+  // readable and the retry loop is preserved. The full, filterable board lives
+  // on leaderboard.html (linked below the list).
   _renderGlobal(){
-    const { scores, myName } = this._remote;
-    const rows = (scores || []).slice(0, 20).map((e, i) => {
-      const mine = myName && e.name === myName ? ' me' : '';
-      return `<div class="lb-row${mine}"><span>#${i + 1} ${escapeHtml(e.name || 'anon')}</span><span>${e.score | 0} pts</span></div>`;
-    }).join('');
-    this.lbList.innerHTML = rows || '<div class="lb-row"><span>No scores yet</span><span>—</span></div>';
+    const { scores, myName, daily, difficulty, rank } = this._remote;
+    const head = rank
+      ? `<div class="rank-line">You're #${rank} on ${boardLabel(daily, difficulty)}</div>`
+      : `<div class="rank-line">${boardLabel(daily, difficulty)}</div>`;
+    this.lbList.innerHTML = head + renderScoreRows(scores, myName, { limit: 3 });
   }
 
   // ---------- Stats strip (streak / daily best / difficulty best / countdown) ----------
@@ -252,6 +288,7 @@ export class UI {
     this.modeBtn.setAttribute('aria-label', `Game mode: ${val}. Activate to switch.`);
     this.modeBtn.classList.toggle('practice', mode === 'practice');
     this._updateDesc();
+    this.updateNameGate();   // Practice lifts the name requirement
   }
   setDifficulty(difficulty){
     this._difficulty = difficulty;
@@ -338,17 +375,35 @@ export class UI {
   showTutorial(){ this.tutorialOverlay.classList.add('show'); }
   hideTutorial(){ this.tutorialOverlay.classList.remove('show'); }
 
+  // ---------- Name gate ----------
+  // A name is required for any run that can reach a leaderboard. Practice is
+  // the deliberate no-friction escape hatch: it submits nothing, so it needs
+  // no name and a curious first-time player can still just tap and play.
+  nameBlocked(){
+    return !Storage.name().trim() && this._mode !== 'practice';
+  }
+  updateNameGate(){
+    const blocked = this.nameBlocked();
+    // Don't fight the Daily "Loading…" disable — setStarting re-applies us after.
+    if (this._startLabel == null) this.startBtn.disabled = blocked;
+    this.nameInput.classList.toggle('needed', blocked);
+    this.nameHint.textContent = blocked ? 'Enter a name to play — or switch Mode to Practice.' : '';
+  }
+
   // Loading state while a Daily seed is being fetched: disable Start so a run
   // can't begin (or be spammed) before the seed resolves, and show progress.
   setStarting(loading){
     if (loading){
       this._startLabel = this.startBtn.textContent;
       this.startBtn.textContent = 'Loading…';
-    } else if (this._startLabel != null){
-      this.startBtn.textContent = this._startLabel;
-      this._startLabel = null;
+      this.startBtn.disabled = true;
+    } else {
+      if (this._startLabel != null){
+        this.startBtn.textContent = this._startLabel;
+        this._startLabel = null;
+      }
+      this.updateNameGate();   // re-apply the gate rather than blindly enabling
     }
-    this.startBtn.disabled = !!loading;
     this.startBtn.setAttribute('aria-busy', loading ? 'true' : 'false');
   }
 }
