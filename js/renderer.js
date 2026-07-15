@@ -79,6 +79,28 @@ export class Renderer {
       ctx.globalAlpha = 1;
     }
 
+    // Spike hazard zone on the top block (hardcore): coral overlay + teeth.
+    if (game.running && game.hazard && game.stack.length){
+      const top = game.stack[game.stack.length - 1];
+      const hz = game.hazard;
+      const hx = hz.side === 'left' ? top.x : top.x + top.w - hz.w;
+      ctx.globalAlpha = 0.5;
+      ctx.fillStyle = '#FF4757';
+      ctx.fillRect(hx, ty, hz.w, bh - gap);
+      ctx.globalAlpha = 1;
+      ctx.fillStyle = '#FF6B6B';
+      const teeth = Math.max(2, Math.floor(hz.w / 10));
+      const tw = hz.w / teeth;
+      ctx.beginPath();
+      for (let i = 0; i < teeth; i++){
+        const x0 = hx + i * tw;
+        ctx.moveTo(x0, ty);
+        ctx.lineTo(x0 + tw / 2, ty - 7);
+        ctx.lineTo(x0 + tw, ty);
+      }
+      ctx.fill();
+    }
+
     // Debris, particles, rings, and floating text live in world space.
     effects.drawWorld(ctx);
 
@@ -101,7 +123,38 @@ export class Renderer {
       ctx.restore();
     }
 
+    // Hardcore shot clock: a shrinking bar above the swing lane. Drawn at a
+    // fixed center position (not under the block) so it never gives away the
+    // location of an "invisible" floor.
+    if (game.running && game.moving && game.dropTimeLimit > 0){
+      const frac = Math.max(0, game.dropTimeLeft / game.dropTimeLimit);
+      const urgent = game.dropTimeLeft < 1.2;
+      const bw = 120 * frac;
+      ctx.globalAlpha = urgent ? 0.5 + 0.5 * Math.abs(Math.sin(game.t * 10)) : 0.8;
+      ctx.fillStyle = urgent ? '#FF4757' : (frac < 0.5 ? '#E8A33D' : '#5EE6D6');
+      ctx.fillRect(W / 2 - bw / 2, my - 14, bw, 3);
+      ctx.globalAlpha = 1;
+    }
+
     ctx.restore();
+
+    // Hardcore lights-out: dim the playfield to near-black. Sighted players get
+    // brief soft glimpses (~1.3 Hz with gradual ramps — well under strobe/
+    // photosensitivity thresholds); reduced-motion players get a steady,
+    // flicker-free dim instead.
+    if (game.blackout > 0){
+      const dur = game.blackoutDur || 1;
+      const ramp = Math.min(1, Math.min((dur - game.blackout) / 0.25, game.blackout / 0.4));
+      let a = 0.82;
+      if (effects.reduceMotion){
+        a = 0.72;
+      } else {
+        const ph = (game.t * 1.3) % 1;
+        if (ph < 0.14) a = 0.4 + 2.6 * ph;   // soft glimpse window
+      }
+      ctx.fillStyle = `rgba(6,9,20,${(a * ramp).toFixed(3)})`;
+      ctx.fillRect(0, 0, W, H);
+    }
 
     // Full-screen flash sits above the shake transform.
     effects.drawOverlay(ctx, W, H);

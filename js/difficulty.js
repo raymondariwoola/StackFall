@@ -17,6 +17,10 @@ export const DIFFICULTIES = {
     guides: true,           // faint drop-alignment guides
     invisibleEvery: 0,      // 0 = the swinging block is always visible
     gust: 0,                // swing-speed jitter amplitude (0 = steady)
+    dropTimeSec: 0,         // per-drop shot clock in seconds (0 = no limit)
+    hazardChance: 0,        // chance per floor of a spike hazard on the top block
+    quakeChance: 0,         // chance a landing sets off a violent screen quake
+    blackoutChance: 0,      // chance per floor of a lights-out blackout
   },
   hardcore: {
     id: 'hardcore',
@@ -30,6 +34,10 @@ export const DIFFICULTIES = {
     guides: false,          // no alignment guides
     invisibleEvery: 4,      // every 4th swinging block flickers near-invisible
     gust: 0.35,             // per-floor swing-speed variance (deterministic via seed)
+    dropTimeSec: 5,         // shot clock: expiry force-drops the block where it swings
+    hazardChance: 0.22,     // spikes on an edge of the top block (from floor 3)
+    quakeChance: 0.18,      // surprise screen quake on landing
+    blackoutChance: 0.12,   // 2.5s lights-out with brief glimpses (from floor 5)
   },
 };
 

@@ -245,24 +245,37 @@ export class UI {
   // The toggle buttons read "Label · Value ⇄" so it's obvious they switch.
   // Mode cycles Endless → Daily → Practice.
   setMode(mode){
+    this._mode = mode;
     const val = mode === 'daily' ? 'Daily' : mode === 'practice' ? 'Practice' : 'Endless';
     this.modeBtn.innerHTML =
       `<span class="tg-label">Mode</span><span class="tg-val">${val}</span><span class="tg-ico" aria-hidden="true">⇄</span>`;
     this.modeBtn.setAttribute('aria-label', `Game mode: ${val}. Activate to switch.`);
     this.modeBtn.classList.toggle('practice', mode === 'practice');
-    if (this.modeDesc){
-      this.modeDesc.textContent =
-        mode === 'daily' ? 'Daily: one shared tower everyone plays today. Resets at UTC midnight.'
-        : mode === 'practice' ? 'Practice: warm up freely. Nothing is submitted, scored, or recorded.'
-        : 'Endless: play any time. Your best goes on the all-time board.';
-    }
+    this._updateDesc();
   }
   setDifficulty(difficulty){
+    this._difficulty = difficulty;
     const hc = difficulty === 'hardcore';
     this.difficultyBtn.innerHTML =
       `<span class="tg-label">Level</span><span class="tg-val">${hc ? 'Hardcore' : 'Normal'}</span><span class="tg-ico" aria-hidden="true">⇄</span>`;
     this.difficultyBtn.classList.toggle('hardcore', hc);
     this.difficultyBtn.setAttribute('aria-label', `Difficulty: ${hc ? 'Hardcore' : 'Normal'}. Activate to switch.`);
+    this._updateDesc();
+  }
+
+  // One line under the toggles describing the selected mode, plus what
+  // Hardcore adds when it's on.
+  _updateDesc(){
+    if (!this.modeDesc) return;
+    const m = this._mode === 'daily'
+      ? 'Daily: one shared tower everyone plays today. Resets at UTC midnight.'
+      : this._mode === 'practice'
+        ? 'Practice: warm up freely. Nothing is submitted, scored, or recorded.'
+        : 'Endless: play any time. Your best goes on the all-time board.';
+    const d = this._difficulty === 'hardcore'
+      ? ' Hardcore: shot clock, spikes, quakes & blackouts — 2× points.'
+      : '';
+    this.modeDesc.textContent = m + d;
   }
 
   // ---------- Practice / health / offline ----------

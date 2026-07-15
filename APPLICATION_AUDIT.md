@@ -319,10 +319,43 @@ if fonts are self-hosted later. Keep the game fully usable without the CDN.
   as they'd break landing geometry unfairly.
   
   - For the hardcore difficulty, I don't see enough things to make it more challenging or annoying. The current changes are good, but I would suggest adding a few more elements to increase the difficulty and make it more engaging for players who are looking for a real challenge. Here are some ideas:
-    - Add a time limit for each drop, forcing players to make quick decisions and increasing the pressure.
-    - Include obstacles or hazards that can appear on the tower, requiring players to navigate around them while stacking blocks.
-    - Consider adding a screen shake effect randomly when a block lands, making it more difficult to see the next drop and adding an element of surprise.
-    - Maybe even a lights out mode where the screen dims or flickers for a few seconds, forcing players to rely on memory and quick reflexes.
+    - ✅ Add a time limit for each drop, forcing players to make quick decisions and increasing the pressure.
+    - ✅ Include obstacles or hazards that can appear on the tower, requiring players to navigate around them while stacking blocks.
+    - ✅ Consider adding a screen shake effect randomly when a block lands, making it more difficult to see the next drop and adding an element of surprise.
+    - ✅ Maybe even a lights out mode where the screen dims or flickers for a few seconds, forcing players to rely on memory and quick reflexes.
+
+  ✅ **All four implemented (2026-07-15):**
+
+  - **Shot clock** — every Hardcore drop has a time limit (5s, tightening ~0.03s
+    per floor to a 3s minimum). Expiry force-drops the block wherever it swings
+    ("TIME!"). A shrinking countdown bar pulses red when under 1.2s; it draws at
+    a fixed center position so it never gives away an "invisible" floor.
+    Pausing (button, `P`, cheat menu, settings, tab switch) freezes the clock.
+  - **Spike hazards** — from floor 3, ~22% of floors grow coral spikes on one
+    edge of the top block (side and width seeded). Landing over them bites the
+    covered width off ("SPIKED!", combo reset); landing entirely on them
+    destroys the block and ends the run. A **Perfect** landing crushes the
+    spikes harmlessly ("CRUSHED!"), so precision beats avoidance — and the
+    noShrink/invincible cheats also crush them, keeping the cheat menu fully
+    functional.
+  - **Random quakes** — ~18% of landings set off a violent screen shake
+    (0.38s vs the normal 0.12s perfect shake). Uses the existing `shakeIt`
+    gate, so reduced-motion players are exempt automatically.
+  - **Blackouts** — from floor 5, ~12% of floors trigger a 2.5s lights-out:
+    the playfield dims to near-black with brief soft glimpses (~1.3 Hz with
+    gradual ramps, well under photosensitivity/strobe thresholds). Under
+    reduced motion it becomes a steady, flicker-free dim. Blackouts and spikes
+    are mutually exclusive per floor, and the blackout freezes while paused.
+
+  Every event rolls from the run's seeded RNG, so a **Daily seed produces the
+  identical schedule for every player**; Normal is completely untouched (all
+  four knobs are 0 in its profile). The start-screen description and tutorial
+  now advertise the additions ("Hardcore: shot clock, spikes, quakes &
+  blackouts — 2× points."). Verified by an 18-check harness against the real
+  `Game`/`Renderer` (determinism across seeds, bite geometry, full-cover death,
+  perfect-crush, clock expiry, pause-freeze, reduced-motion render path) plus an
+  11-check E2E where the shot clock alone drove a run to game over while a
+  Normal run idled unaffected.
 
 ### Competition and retention
 

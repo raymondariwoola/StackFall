@@ -33,6 +33,11 @@ export class Game {
     this.curWorld = 0;
     this.cheated = false;        // true if any cheat affected this run
     this.t = 0;                  // elapsed run time (drives hardcore flicker)
+    this.hazard = null;          // { side:'left'|'right', w } spikes on the top block
+    this.blackout = 0;           // seconds of lights-out remaining
+    this.blackoutDur = 0;        // full duration of the current blackout
+    this.dropTimeLimit = 0;      // per-drop shot clock (0 = off)
+    this.dropTimeLeft = 0;
   }
 
   // A gentle, non-interactive tower for the title screen.
@@ -66,6 +71,11 @@ export class Game {
     this.overState = false;
     this.cheated = false;
     this.t = 0;
+    this.hazard = null;
+    this.blackout = 0;
+    this.blackoutDur = 0;
+    this.dropTimeLimit = 0;
+    this.dropTimeLeft = 0;
     this.baseW = W * Difficulty.get().baseWidthRatio;
     this.stack.push({ x: (W - this.baseW) / 2, w: this.baseW, floor: 0 });
     this._spawnMoving();
@@ -93,6 +103,27 @@ export class Game {
       // Hardcore "invisible floors": the swinging block flickers near-invisible.
       invisible: diff.invisibleEvery > 0 && floor > 0 && floor % diff.invisibleEvery === 0,
     };
+
+    // Hardcore shot clock: a per-drop time limit that tightens slowly with
+    // height; expiry force-drops the block wherever it happens to swing.
+    this.dropTimeLimit = diff.dropTimeSec > 0
+      ? Math.max(3, diff.dropTimeSec - this.floors * 0.03)
+      : 0;
+    this.dropTimeLeft = this.dropTimeLimit;
+
+    // Hardcore floor events — all rolled from the seeded RNG so a Daily seed
+    // produces the identical schedule for every player. Blackouts and spikes
+    // are mutually exclusive so a single floor stays (barely) readable.
+    this.hazard = null;
+    if (diff.blackoutChance > 0 && floor >= 5 && this.rng.next() < diff.blackoutChance){
+      this.blackoutDur = 2.5;
+      this.blackout = this.blackoutDur;
+    } else if (diff.hazardChance > 0 && floor >= 3 && this.rng.next() < diff.hazardChance){
+      this.hazard = {
+        side: this.rng.bool() ? 'left' : 'right',
+        w: top.w * (0.22 + this.rng.next() * 0.14),
+      };
+    }
   }
 
   drop(){
@@ -179,6 +210,55 @@ export class Game {
       this.haptics.buzz(10);
     }
 
+    // Spike hazard on the top block: a Perfect landing (or the width/death
+    // cheats) crushes it harmlessly; anything else that touches it gets the
+    // covered width bitten off — and a block landed entirely on the spikes is
+    // destroyed outright. Spikes sit on an edge, so the bite keeps the block
+    // contiguous.
+    if (this.hazard){
+      const hz = this.hazard;
+      const hL = hz.side === 'left' ? tLeft : tRight - hz.w;
+      const hR = hz.side === 'left' ? tLeft + hz.w : tRight;
+      if (perfect || Cheats.on('noShrink') || Cheats.on('invincible')){
+        this.effects.popText((hL + hR) / 2, dropY - 22, 'CRUSHED!', '#FF6B6B');
+        this.effects.burst((hL + hR) / 2, dropY + this.bh / 2, '#FF6B6B', 10);
+      } else {
+        const biteL = Math.max(newLayer.x, hL);
+        const biteR = Math.min(newLayer.x + newLayer.w, hR);
+        if (biteR - biteL > 0){
+          if (biteL <= newLayer.x + 0.5 && biteR >= newLayer.x + newLayer.w - 0.5){
+            // Landed entirely on the spikes — the whole block is destroyed.
+            this.effects.addDebris(newLayer.x, dropY, newLayer.w, this.bh, color, hz.side === 'left' ? -80 : 80);
+            this.audio.cut();
+            this.haptics.buzz(60);
+            this._gameOver();
+            return;
+          }
+          this.effects.addDebris(biteL, dropY, biteR - biteL, this.bh, '#FF6B6B', hz.side === 'left' ? -70 : 70);
+          if (hz.side === 'left'){
+            newLayer.w = newLayer.x + newLayer.w - biteR;
+            newLayer.x = biteR;
+          } else {
+            newLayer.w = biteL - newLayer.x;
+          }
+          this.combo = 0;
+          this.effects.popText((biteL + biteR) / 2, dropY - 22, 'SPIKED!', '#FF6B6B');
+          this.effects.shakeIt(0.2);
+          this.audio.cut();
+          this.haptics.buzz([0, 30, 30, 30]);
+        }
+      }
+      this.hazard = null;
+    }
+
+    // Hardcore quake: some landings set off a violent screen shake (an
+    // "element of surprise" — seeded, so Daily runs shake identically).
+    // shakeIt() is a no-op for players who prefer reduced motion.
+    if (diff.quakeChance > 0 && this.rng.next() < diff.quakeChance){
+      this.effects.shakeIt(0.38);
+      this.haptics.buzz(20);
+    }
+
     this.stack.push(newLayer);
     this.floors++;
 
@@ -218,6 +298,9 @@ export class Game {
     }
     this.stack.length = 0;
     this.moving = null;
+    this.hazard = null;
+    this.blackout = 0;
+    this.dropTimeLimit = 0;
     this.effects.shakeIt(0.25);
     this.audio.gameOver();
     this.haptics.buzz([0, 40, 60, 80]);
@@ -228,7 +311,19 @@ export class Game {
     const { W, H } = this.view;
     this.bh = blockH(H);
     this.topY = topScreenY(H);
-    if (this.running && !this.paused) this.t += dt;   // drives the hardcore flicker phase
+    if (this.running && !this.paused){
+      this.t += dt;   // drives the hardcore flicker/glimpse phases
+      if (this.blackout > 0) this.blackout = Math.max(0, this.blackout - dt);
+      // Shot clock: when it expires the block drops wherever it swings.
+      if (this.dropTimeLimit > 0 && this.moving){
+        this.dropTimeLeft -= dt;
+        if (this.dropTimeLeft <= 0){
+          this.dropTimeLeft = 0;
+          this.effects.popText(this.moving.x + this.moving.w / 2, movingY(H) - 14, 'TIME!', '#FF6B6B');
+          this.drop();
+        }
+      }
+    }
 
     if (this.running && !this.paused && this.moving){
       this.moving.x += this.moving.dir * this.moving.speed * dt;
