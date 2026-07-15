@@ -34,7 +34,7 @@ SIGN_SALT = "stackfall"
 # the deployed Worker, temporarily append your dev origin, e.g.:
 #   ALLOW_ORIGIN = "https://raymondariwoola.github.io,http://127.0.0.1:8137"
 # Set back to "*" only if you intentionally want an open API.
-ALLOW_ORIGIN = "https://raymondariwoola.github.io"
+ALLOW_ORIGIN = "https://raymondariwoola.github.io,http://127.0.0.1:8137"
 # Reject implausible scores server-side.
 MAX_SCORE = "100000"
 # Per-IP rate limits over a rolling 60s window (soft, KV-backed).
