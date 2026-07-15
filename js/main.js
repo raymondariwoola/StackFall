@@ -20,6 +20,7 @@ import { CheatMenu } from './cheatmenu.js';
 import { announce, trapFocus, prefersReducedMotion } from './a11y.js';
 import { Difficulty } from './difficulty.js';
 import { buildShareCard } from './sharecard.js';
+import { evaluateAchievements } from './achievements.js';
 
 const canvas = document.getElementById('c');
 const ctx = canvas.getContext('2d');
@@ -32,7 +33,8 @@ const renderer = new Renderer(ctx);
 const ui = new UI();
 const rng = new RNG((Date.now() >>> 0) || 1);
 
-let mode = 'endless';      // 'endless' | 'daily' — the mode for the NEXT run
+const MODE_CYCLE = ['endless', 'daily', 'practice'];
+let mode = 'endless';      // 'endless' | 'daily' | 'practice' — for the NEXT run
 let runMode = mode;        // the mode captured when the CURRENT run started
 let difficulty = Storage.difficulty();   // 'normal' | 'hardcore' — the NEXT run
 let runDifficulty = difficulty;          // captured when the CURRENT run started
@@ -83,7 +85,7 @@ function clearModal(){
 const game = new Game({
   view, effects, audio, haptics: Haptics, rng,
   callbacks: {
-    onScore: (s, combo) => { ui.setScore(s); ui.setCombo(combo); ui.pulseScore(); },
+    onScore: (s, combo) => { ui.setScore(s); ui.setCombo(combo); ui.pulseScore(); checkAchievements(); },
     onWorld: (world) => { background.setWorld(world); },
     onGameOver: (score, floors, cheated, maxCombo) => {
       // Capture the mode/difficulty the run was actually played in — the toggles
@@ -92,29 +94,49 @@ const game = new Game({
       const playedMode = runMode;
       const playedDifficulty = runDifficulty;
       const streak = maxCombo || 0;
+      const practice = playedMode === 'practice';
       lastRun = { score, floors, mode: playedMode, difficulty: playedDifficulty, streak };
-      Storage.addScore(score);
+
+      // Read the previous record BEFORE recording, so we can tell whether this
+      // run actually beat it (drives the "new personal best" celebration).
+      const prevModeBest = practice ? 0 : Storage.bestForMode(playedMode);
+      const isNewBest = !practice && score > 0 && score > prevModeBest;
+
+      // Practice submits nothing and sets no record — only a labelled history
+      // entry so the player can still see what they did.
       Storage.addRun({ score, floors, mode: playedMode, difficulty: playedDifficulty, streak });
-      if (playedMode === 'daily') Storage.recordDaily(dailySeedString(), score);
+      if (!practice){
+        Storage.addScore(score);
+        if (playedMode === 'daily') Storage.recordDaily(dailySeedString(), score);
+      }
       updateStats();
+
       // A run can't end while paused, but clear the state defensively.
       paused = false;
       ui.hidePause();
       ui.setPauseButtonVisible(false);
+      ui.setPracticeBadge(false);
+
       const isDaily = playedMode === 'daily';
-      // Submit to the matching board (no-ops until WORKER_URL is set), then
-      // refresh the panel with the latest standings. The `cheated` flag lets
-      // the Worker keep cheated runs off the board (see BLOCK_CHEATED).
-      submitScore(Storage.name() || 'anon', score, cheated, isDaily)
-        .then(() => refreshRemoteBoard(isDaily))
-        .catch(() => {});
+      if (!practice){
+        // Submit to the matching board (no-ops until WORKER_URL is set), then
+        // refresh the panel with the latest standings. The `cheated` flag lets
+        // the Worker keep cheated runs off the board (see BLOCK_CHEATED).
+        submitScore(Storage.name() || 'anon', score, cheated, isDaily)
+          .then(() => { setHealth('online'); refreshRemoteBoard(isDaily); })
+          .catch(() => setHealth('offline'));
+      }
       clearTimeout(overlayTimer);
-      announce(`Game over. ${score} points, ${floors} floors.`);
+      announce(practice
+        ? `Practice run over. ${score} points, ${floors} floors. Not recorded.`
+        : `Game over. ${score} points, ${floors} floors.${isNewBest ? ' New personal best!' : ''}`);
+
       // Let the tower collapse play out before the panel slides in.
       overlayTimer = setTimeout(() => {
-        ui.showGameOver(score, floors);
+        ui.showGameOver(score, floors, { newBest: isNewBest, mode: playedMode, practice, modeBest: prevModeBest });
+        if (isNewBest) celebrateBest();
         setModal(ui.panel, ui.startBtn);
-        refreshRemoteBoard(isDaily);
+        if (!practice) refreshRemoteBoard(isDaily);
       }, 700);
     },
   },
@@ -191,8 +213,51 @@ async function refreshRemoteBoard(daily = mode === 'daily'){
     if (data && Array.isArray(data.scores)){
       ui.renderRemoteScores(data.scores, Storage.name(), data.scope || (daily ? 'daily' : 'all'));
       ui.enableGlobalTab();   // reveal + default to the Global tab once online
+      setHealth('online');
     }
-  } catch (e) { /* stay on local board */ }
+  } catch (e) {
+    // Stay on the local board — play and local scores continue unaffected.
+    setHealth('offline');
+  }
+}
+
+// ---------- Achievements ----------
+// Evaluated from live run stats. Practice is consequence-free, so it never
+// unlocks anything (matching "practice records nothing").
+function checkAchievements(){
+  if (runMode === 'practice') return;
+  const earned = evaluateAchievements({ floors: game.floors, perfects: game.perfects }, Storage);
+  if (!earned.length) return;
+  for (const a of earned){
+    ui.showAchievement(a);
+    announce(`Achievement unlocked: ${a.label}. ${a.desc}.`);
+  }
+  audio.milestone();
+  if (ui.currentTab === 'awards') ui.renderBoard();
+}
+
+// A short canvas + audio celebration when a run beats that mode's record.
+// (flashScreen is gated by reduced-motion inside Effects; particles are not.)
+function celebrateBest(){
+  audio.milestone();
+  Haptics.buzz([0, 30, 40, 30]);
+  const cx = view.W / 2, cy = view.H * 0.42;
+  effects.burst(cx, cy, '#E8A33D', 26);
+  effects.ring(cx, cy, '#5EE6D6');
+  effects.popText(cx, cy - 30, 'NEW BEST!', '#E8A33D');
+  effects.flashScreen(0.16, '#E8A33D');
+}
+
+// ---------- Worker health ----------
+// Derived from the fetches the game already makes — no polling loop, so this
+// costs zero extra Worker reads. Local play/scores are unaffected either way.
+let health = null;   // null = unknown / no Worker, 'online' | 'offline'
+function setHealth(next){
+  if (!WORKER_URL || health === next) return;
+  health = next;
+  ui.setHealth(next);
+  ui.setOfflineBanner(next === 'offline');
+  if (next === 'offline') announce('Worker unavailable. Playing locally; scores saved on this device.');
 }
 
 // ---------- Stats strip (streak / daily best / difficulty best / countdown) ----------
@@ -313,10 +378,12 @@ async function start(){
   ui.setScore(0);
   ui.setCombo(0);
   ui.setPauseButtonVisible(true);
+  ui.setPracticeBadge(forMode === 'practice');   // explicit, persistent label
   background.setWorld(worldFor(0));
   game.reset(seed);
   const diffLabel = difficulty === 'hardcore' ? ' hardcore' : '';
-  announce((forMode === 'daily' ? 'Daily' : 'Endless') + diffLabel + ' run started');
+  const modeLabel = forMode === 'daily' ? 'Daily' : forMode === 'practice' ? 'Practice' : 'Endless';
+  announce(modeLabel + diffLabel + ' run started' + (forMode === 'practice' ? ' — nothing will be recorded' : ''));
 }
 
 // ---------- Pause ----------
@@ -405,11 +472,13 @@ ui.modeBtn.addEventListener('pointerdown', (e) => e.stopPropagation());
 ui.modeBtn.addEventListener('click', (e) => {
   e.stopPropagation();
   uiSound('toggle');
-  mode = mode === 'daily' ? 'endless' : 'daily';
+  // Cycle Endless → Daily → Practice → Endless.
+  mode = MODE_CYCLE[(MODE_CYCLE.indexOf(mode) + 1) % MODE_CYCLE.length];
   ui.setMode(mode);
   updateStats();
   // Show the board for the newly selected competition so the toggle actually
   // changes what the player is comparing against, not just the seed.
+  // Practice has no board of its own — show the all-time one.
   refreshRemoteBoard(mode === 'daily');
 });
 

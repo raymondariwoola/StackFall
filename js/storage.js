@@ -10,6 +10,8 @@ const NAME_KEY = 'stackfall_name';
 const TUTORIAL_KEY = 'stackfall_tutorial_seen';
 const RUNS_KEY = 'stackfall_runs';            // bounded personal run history
 const BESTDIFF_KEY = 'stackfall_best_diff';   // { normal, hardcore } best scores
+const BESTMODE_KEY = 'stackfall_best_mode';   // { endless, daily } best scores
+const ACHIEVE_KEY = 'stackfall_achievements'; // unlocked achievement ids
 const DAILY_KEY = 'stackfall_daily';          // { best, streak, lastDay }
 const DIFFICULTY_KEY = 'stackfall_difficulty';
 const HC_KEY = 'stackfall_high_contrast';
@@ -86,12 +88,15 @@ export const Storage = {
     catch (e) { return []; }
   },
   // record: { score, floors, mode, difficulty, streak }
+  // Practice runs are recorded in history (labelled) but never set a record.
   addRun(record){
     const score = Math.max(0, Math.floor(Number(record.score) || 0));
+    const mode = record.mode === 'daily' ? 'daily'
+      : record.mode === 'practice' ? 'practice' : 'endless';
     const run = {
       score,
       floors: Math.max(0, Math.floor(Number(record.floors) || 0)),
-      mode: record.mode === 'daily' ? 'daily' : 'endless',
+      mode,
       difficulty: record.difficulty === 'hardcore' ? 'hardcore' : 'normal',
       streak: Math.max(0, Math.floor(Number(record.streak) || 0)),
       ts: Date.now(),
@@ -100,11 +105,18 @@ export const Storage = {
     list.unshift(run);
     safeSet(RUNS_KEY, JSON.stringify(list.slice(0, RUNS_MAX)));
 
-    // Track best score per difficulty.
-    const bd = this.bestByDifficulty();
-    if (score > (bd[run.difficulty] || 0)){
-      bd[run.difficulty] = score;
-      safeSet(BESTDIFF_KEY, JSON.stringify(bd));
+    // Practice is consequence-free: it appears in history but sets no records.
+    if (mode !== 'practice'){
+      const bd = this.bestByDifficulty();
+      if (score > (bd[run.difficulty] || 0)){
+        bd[run.difficulty] = score;
+        safeSet(BESTDIFF_KEY, JSON.stringify(bd));
+      }
+      const bm = this.bestByMode();
+      if (score > (bm[mode] || 0)){
+        bm[mode] = score;
+        safeSet(BESTMODE_KEY, JSON.stringify(bm));
+      }
     }
     return run;
   },
@@ -115,6 +127,31 @@ export const Storage = {
   bestForDifficulty(d){
     const n = Number(this.bestByDifficulty()[d === 'hardcore' ? 'hardcore' : 'normal']);
     return Number.isFinite(n) ? n : 0;
+  },
+  bestByMode(){
+    try { const v = JSON.parse(safeGet(BESTMODE_KEY) || '{}'); return (v && typeof v === 'object') ? v : {}; }
+    catch (e) { return {}; }
+  },
+  bestForMode(m){
+    const n = Number(this.bestByMode()[m === 'daily' ? 'daily' : 'endless']);
+    return Number.isFinite(n) ? n : 0;
+  },
+
+  // ---------- Achievements ----------
+  achievements(){
+    try {
+      const v = JSON.parse(safeGet(ACHIEVE_KEY) || '[]');
+      return Array.isArray(v) ? v.filter((x) => typeof x === 'string') : [];
+    } catch (e) { return []; }
+  },
+  hasAchievement(id){ return this.achievements().indexOf(id) !== -1; },
+  // Returns true only the first time an id is unlocked (drives the toast).
+  unlockAchievement(id){
+    const list = this.achievements();
+    if (list.indexOf(id) !== -1) return false;
+    list.push(id);
+    safeSet(ACHIEVE_KEY, JSON.stringify(list));
+    return true;
   },
 
   // ---------- Daily stats (best / streak) ----------

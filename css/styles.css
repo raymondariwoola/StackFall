@@ -512,6 +512,9 @@ canvas{ display:block; width:100%; height:100%; position:relative; z-index:0; }
 #difficulty-btn.hardcore{ border-color: rgba(255,107,107,0.5); }
 #difficulty-btn.hardcore .tg-val,
 #difficulty-btn.hardcore .tg-ico{ color: var(--coral); }
+#mode-btn.practice{ border-color: rgba(94,230,214,0.5); }
+#mode-btn.practice .tg-val,
+#mode-btn.practice .tg-ico{ color: var(--cyan); }
 
 /* Contextual explanation of the selected mode (Endless vs Daily). */
 .mode-desc{
@@ -541,21 +544,121 @@ canvas{ display:block; width:100%; height:100%; position:relative; z-index:0; }
 .stat-chip.count strong{ color: var(--cyan); }
 
 /* ---------- Board tabs + history rows ---------- */
-.lb-tabs{ display:flex; gap: 6px; margin-bottom: 10px; }
+.lb-tabs{ display:flex; gap: 5px; margin-bottom: 10px; }
 .lb-tab{
   flex: 1;
   font-family:'IBM Plex Mono', monospace;
-  font-size: 11px; letter-spacing: 0.1em; text-transform: uppercase;
+  /* sized to fit four tabs on a ~270px panel without wrapping */
+  font-size: 10px; letter-spacing: 0.04em; text-transform: uppercase;
   color: var(--ink-dim);
   background: transparent;
   border: 1px solid rgba(245,243,236,0.12);
   border-radius: 999px;
-  padding: 6px 4px;
+  padding: 6px 2px;
   cursor: pointer;
+  white-space: nowrap;
 }
 .lb-tab.active{ color: var(--bg); background: var(--ink); border-color: var(--ink); }
 .lb-row .meta{ font-size: 10px; color: var(--ink-dim); letter-spacing: 0.04em; }
 .lb-row.hardcore span:first-child{ color: var(--coral); }
+
+/* ---------- Practice badge ---------- */
+#practice-badge{
+  position:absolute;
+  /* left side, below the sound/settings buttons — clear of the cheat badge */
+  top: calc(max(14px, env(safe-area-inset-top)) + 48px);
+  left: 14px;
+  z-index: 4;
+  padding: 5px 10px;
+  font-size: 10px; font-weight: 600; letter-spacing: 0.16em;
+  color: var(--bg);
+  background: var(--cyan);
+  border-radius: 999px;
+  pointer-events: none;
+  box-shadow: 0 0 18px rgba(94,230,214,0.45);
+}
+
+/* ---------- Offline banner (informational, never blocks input) ---------- */
+#offline-banner{
+  position:absolute;
+  top: calc(max(14px, env(safe-area-inset-top)) + 52px);
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 6;
+  max-width: min(340px, 88vw);
+  text-align:center;
+  padding: 7px 14px;
+  font-size: 11px;
+  line-height: 1.3;
+  color: var(--bg);
+  background: var(--amber);
+  border-radius: 999px;
+  box-shadow: 0 6px 20px rgba(0,0,0,0.35);
+  pointer-events: none;   /* purely informational */
+}
+
+/* ---------- Achievement toast ---------- */
+#toast{
+  position:absolute;
+  left: 50%;
+  bottom: max(70px, calc(env(safe-area-inset-bottom) + 70px));
+  transform: translateX(-50%) translateY(8px);
+  z-index: 7;
+  display:flex; align-items:center; gap: 10px;
+  max-width: min(320px, 86vw);
+  padding: 10px 16px;
+  background: linear-gradient(180deg, rgba(23,29,52,0.96), rgba(18,23,43,0.96));
+  border: 1px solid rgba(232,163,61,0.5);
+  border-radius: 999px;
+  box-shadow: 0 10px 30px rgba(0,0,0,0.5);
+  opacity: 0;
+  transition: opacity .25s ease, transform .25s ease;
+  pointer-events: none;
+}
+#toast.show{ opacity: 1; transform: translateX(-50%) translateY(0); }
+#toast .t-ico{ font-size: 20px; line-height: 1; }
+#toast .t-label{ font-family:'Space Grotesk', sans-serif; font-weight:700; font-size: 13px; color: var(--amber); }
+#toast .t-desc{ font-size: 10px; color: var(--ink-dim); }
+
+/* ---------- Health indicator ---------- */
+.health{
+  display:flex; align-items:center; justify-content:center; gap: 6px;
+  margin-top: 12px;
+  font-size: 10px; letter-spacing: 0.1em; text-transform: uppercase;
+  color: var(--ink-dim);
+}
+.health-dot{
+  width: 6px; height: 6px; border-radius: 999px;
+  background: var(--ink-dim);
+}
+.health.online .health-dot{ background: var(--cyan); box-shadow: 0 0 8px rgba(94,230,214,0.8); }
+.health.offline .health-dot{ background: var(--amber); box-shadow: 0 0 8px rgba(232,163,61,0.8); }
+
+/* ---------- Awards list ---------- */
+.aw-row{ display:flex; align-items:center; gap: 9px; padding: 5px 0; }
+.aw-row .aw-ico{ font-size: 15px; width: 20px; text-align:center; }
+.aw-row .aw-txt{ flex:1; }
+.aw-row .aw-label{ font-size: 12px; color: var(--ink); }
+.aw-row .aw-desc{ font-size: 10px; color: var(--ink-dim); }
+.aw-row.locked{ opacity: 0.45; }
+.aw-row.locked .aw-ico{ filter: grayscale(1); }
+.aw-row.locked .aw-label{ color: var(--ink-dim); }
+
+/* ---------- New personal best celebration ---------- */
+@keyframes bestPop{
+  0%{ transform: scale(0.7); opacity: 0; }
+  55%{ transform: scale(1.12); opacity: 1; }
+  100%{ transform: scale(1); opacity: 1; }
+}
+@keyframes bestGlow{
+  0%,100%{ text-shadow: 0 2px 24px rgba(232,163,61,0.25); }
+  50%{ text-shadow: 0 2px 34px rgba(232,163,61,0.9); }
+}
+.panel .eyebrow.newbest{
+  color: var(--amber);
+  animation: bestPop .5s cubic-bezier(.2,1.4,.4,1) both;
+}
+.panel h1.newbest{ animation: bestGlow 1.4s ease-in-out 2; }
 
 /* ---------- Reduced motion (system pref OR user toggle) ---------- */
 @media (prefers-reduced-motion: reduce){

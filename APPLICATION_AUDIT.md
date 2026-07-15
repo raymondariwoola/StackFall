@@ -317,6 +317,7 @@ if fonts are self-hosted later. Keep the game fully usable without the CDN.
   works in every mode (unchanged). “Moving platforms” from the example were
   realized as the seeded swing-speed gusts; literal drifting stacks were omitted
   as they'd break landing geometry unfairly.
+  
   - For the hardcore difficulty, I don't see enough things to make it more challenging or annoying. The current changes are good, but I would suggest adding a few more elements to increase the difficulty and make it more engaging for players who are looking for a real challenge. Here are some ideas:
     - Add a time limit for each drop, forcing players to make quick decisions and increasing the pressure.
     - Include obstacles or hazards that can appear on the tower, requiring players to navigate around them while stacking blocks.
@@ -329,18 +330,51 @@ if fonts are self-hosted later. Keep the game fully usable without the CDN.
   to the next leaderboard position.
 - Add a deterministic seed/code view so players can replay a specific daily
   challenge and compare fairly.
-- Add achievements for milestones such as 10 floors, five perfect drops, and
-  reaching each world; store them locally.
-- Add a practice mode with no leaderboard submission and an explicit practice
-  label.
-- Add a “new personal best” animation and a local best-by-mode record.
+- ✅ **Done (2026-07-14)** — Add achievements for milestones such as 10 floors,
+  five perfect drops, and reaching each world; store them locally. Eight
+  milestones in `js/achievements.js` (10/25/50 floors, 5 perfect drops in a run,
+  and one per world — Ocean/Forest/Dusk/Neon, derived from `WORLDS` +
+  `CONFIG.WORLD_SIZE` so they stay in sync). Every test reads **only** run stats
+  (floors / perfect drops), never the active palette, so the High Contrast
+  setting (which uses a smaller world set) can't make any unreachable. Unlocks
+  are stored locally, announced to screen readers, pop a queued toast, and are
+  listed under a new **Awards** tab (locked ones shown dimmed).
+- ✅ **Done (2026-07-14)** — Add a practice mode with no leaderboard submission
+  and an explicit practice label. Implemented as a third state on the Mode toggle
+  (Endless → Daily → Practice), so no new control was added. Practice is
+  consequence-free: **no** submission, **no** local best, **no** best-by-mode/
+  difficulty, **no** daily streak, and **no** achievements — only a labelled
+  history entry. A persistent `PRACTICE` badge shows during the run, the panel
+  reads "Practice Run · not submitted or recorded", and Share is hidden (there's
+  no real result to share).
+- ✅ **Done (2026-07-14)** — Add a “new personal best” animation and a local
+  best-by-mode record. `Storage.bestByMode`/`bestForMode` track the best per mode;
+  the previous record is read **before** recording so a genuine beat can be
+  detected. A new best shows a "★ New Personal Best" eyebrow with a pop/glow
+  animation plus a canvas burst, ring, "NEW BEST!" pop-text, milestone sound and
+  haptic (`celebrateBest` in `js/main.js`; the flash is reduced-motion gated).
 
 ### Reliability and deployment
 
-- Add a lightweight health indicator and a non-blocking offline banner when
-  the Worker is unavailable; retain local play and local scores.
-- Add a service worker/cache manifest for installable offline play on supported
-  browsers, while keeping the Worker optional.
+- ✅ **Done (2026-07-14)** — Add a lightweight health indicator and a
+  non-blocking offline banner when the Worker is unavailable; retain local play
+  and local scores. Health is **derived from the fetches the game already makes**
+  (no polling loop, so it costs zero extra Worker reads): a success marks
+  `online`, a failure marks `offline`. A dot + label under the board shows the
+  state, and an amber banner ("Offline — playing locally, scores saved on this
+  device") appears with `pointer-events: none` so it can never intercept input.
+  Local play and local scores are unaffected either way; the state is also
+  announced to screen readers. Hidden entirely when no `WORKER_URL` is set.
+- ⬜ **Deferred (2026-07-14)** — Add a service worker/cache manifest for
+  installable offline play on supported browsers, while keeping the Worker
+  optional. Deliberately **not** implemented yet: it's the only item here that
+  can break production in a way that's hard to undo (a registered SW is sticky
+  and can keep serving stale assets after a fix is pushed). When picked up it
+  needs: a versioned cache, **network-first** `index.html`, **network-only** for
+  the Worker API (`/daily`, `/leaderboard`, `/score` — cache-first there would
+  serve stale seeds/boards and break the Daily competition), relative scope for
+  the `/StackFall/` GitHub Pages subpath, old-cache cleanup, and a tested update
+  path. Everything else ships without it.
 - Add a GitHub Actions workflow for syntax checks, link checks, and a static
   deployment smoke test on every push.
 - Add a strict Content Security Policy compatible with the chosen font source,

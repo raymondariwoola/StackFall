@@ -95,7 +95,7 @@ export async function buildShareCard(run){
   ctx.fillText(`${run.floors | 0} floors${streak}`, S / 2, 770);
 
   // Mode + difficulty chips, centered as a row.
-  const modeLabel = run.mode === 'daily' ? 'DAILY' : 'ENDLESS';
+  const modeLabel = run.mode === 'daily' ? 'DAILY' : run.mode === 'practice' ? 'PRACTICE' : 'ENDLESS';
   const diffLabel = run.difficulty === 'hardcore' ? 'HARDCORE' : 'NORMAL';
   ctx.font = '600 30px "IBM Plex Mono", monospace';
   const gap = 20;

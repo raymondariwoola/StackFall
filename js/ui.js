@@ -1,6 +1,7 @@
 // All DOM/HUD wiring. Keeps the canvas layer free of document fiddling.
 
 import { Storage } from './storage.js';
+import { ACHIEVEMENTS } from './achievements.js';
 
 function escapeHtml(s){
   return String(s).replace(/[&<>"']/g, (c) => (
@@ -36,7 +37,14 @@ export class UI {
     this.difficultyBtn = document.getElementById('difficulty-btn');
     this.modeDesc = document.getElementById('mode-desc');
     this.statsStrip = document.getElementById('stats-strip');
+    this.practiceBadge = document.getElementById('practice-badge');
+    this.offlineBanner = document.getElementById('offline-banner');
+    this.toast = document.getElementById('toast');
+    this.health = document.getElementById('health');
+    this.healthText = document.getElementById('health-text');
     this._click = () => {};   // click-sound hook, injected by main.js
+    this._toastQueue = [];
+    this._toastBusy = false;
     this.settingsBtn = document.getElementById('settings-btn');
     this.settingsOverlay = document.getElementById('settings-overlay');
     this.settingsClose = document.getElementById('settings-close');
@@ -92,15 +100,34 @@ export class UI {
     this.hint.classList.remove('show');
   }
 
-  showGameOver(score, floors){
-    const best = Storage.best();
-    const isBest = score > 0 && score >= best;
-    this.eyebrow.textContent = isBest ? 'New Record' : 'Run Complete';
+  // opts: { newBest, mode, practice, modeBest }
+  showGameOver(score, floors, opts = {}){
+    const practice = !!opts.practice;
+    const newBest = !!opts.newBest;
+
+    // Retrigger the celebration animations by removing the classes first.
+    this.eyebrow.classList.remove('newbest');
+    this.h1.classList.remove('newbest');
+    void this.eyebrow.offsetWidth;
+
+    if (practice){
+      this.eyebrow.textContent = 'Practice Run';
+      this.sub.textContent = `${floors} floors · not submitted or recorded`;
+    } else if (newBest){
+      this.eyebrow.textContent = '★ New Personal Best';
+      this.sub.textContent = `${floors} floors · your best ${opts.mode === 'daily' ? 'Daily' : 'Endless'} run yet!`;
+      this.eyebrow.classList.add('newbest');
+      this.h1.classList.add('newbest');
+    } else {
+      const modeBest = opts.modeBest || 0;
+      this.eyebrow.textContent = 'Run Complete';
+      this.sub.textContent = `${floors} floors · ${modeBest > 0 ? 'Best ' + modeBest + ' pts' : 'Set your first record!'}`;
+    }
     this.h1.textContent = score + ' pts';
-    this.sub.textContent = `${floors} floors · ${isBest ? 'New personal best!' : 'Best ' + best + ' pts'}`;
     this.startBtn.textContent = 'Retry';
     this.shareBtn.textContent = 'Share Score';
-    this.shareBtn.hidden = false;
+    // Nothing to share for a practice run — it isn't recorded anywhere.
+    this.shareBtn.hidden = practice;
     this.refreshBest();
     this.renderBoard();
     this.overlay.classList.add('show');
@@ -138,8 +165,22 @@ export class UI {
 
   renderBoard(){
     if (this.currentTab === 'history') return this._renderHistory();
+    if (this.currentTab === 'awards') return this._renderAwards();
     if (this.currentTab === 'global') return this._renderGlobal();
     return this._renderBest();
+  }
+
+  // Awards: every milestone, unlocked ones highlighted, locked ones dimmed so
+  // players can see what's still out there.
+  _renderAwards(){
+    const unlocked = Storage.achievements();
+    this.lbList.innerHTML = ACHIEVEMENTS.map((a) => {
+      const got = unlocked.indexOf(a.id) !== -1;
+      return `<div class="aw-row${got ? '' : ' locked'}">` +
+        `<span class="aw-ico">${got ? a.icon : '🔒'}</span>` +
+        `<span class="aw-txt"><span class="aw-label">${escapeHtml(a.label)}</span>` +
+        `<div class="aw-desc">${escapeHtml(a.desc)}</div></span></div>`;
+    }).join('');
   }
 
   // Store the latest remote standings; render now if the Global tab is active.
@@ -164,7 +205,8 @@ export class UI {
           const when = new Date(r.ts || Date.now());
           const date = `${when.getMonth() + 1}/${when.getDate()}`;
           const hc = r.difficulty === 'hardcore';
-          const tags = `${r.mode === 'daily' ? 'Daily' : 'Endless'} · ${hc ? 'Hardcore' : 'Normal'} · ${date}`;
+          const modeLabel = r.mode === 'daily' ? 'Daily' : r.mode === 'practice' ? 'Practice' : 'Endless';
+          const tags = `${modeLabel} · ${hc ? 'Hardcore' : 'Normal'} · ${date}`;
           return `<div class="lb-row${hc ? ' hardcore' : ''}"><span>${r.score} pts<div class="meta">${tags}</div></span><span>${r.floors}f</span></div>`;
         }).join('')
       : '<div class="lb-row"><span>No runs yet</span><span>—</span></div>';
@@ -201,14 +243,17 @@ export class UI {
   setClickSound(fn){ this._click = fn || (() => {}); }
 
   // The toggle buttons read "Label · Value ⇄" so it's obvious they switch.
+  // Mode cycles Endless → Daily → Practice.
   setMode(mode){
-    const val = mode === 'daily' ? 'Daily' : 'Endless';
+    const val = mode === 'daily' ? 'Daily' : mode === 'practice' ? 'Practice' : 'Endless';
     this.modeBtn.innerHTML =
       `<span class="tg-label">Mode</span><span class="tg-val">${val}</span><span class="tg-ico" aria-hidden="true">⇄</span>`;
     this.modeBtn.setAttribute('aria-label', `Game mode: ${val}. Activate to switch.`);
+    this.modeBtn.classList.toggle('practice', mode === 'practice');
     if (this.modeDesc){
-      this.modeDesc.textContent = mode === 'daily'
-        ? 'Daily: one shared tower everyone plays today. Resets at UTC midnight.'
+      this.modeDesc.textContent =
+        mode === 'daily' ? 'Daily: one shared tower everyone plays today. Resets at UTC midnight.'
+        : mode === 'practice' ? 'Practice: warm up freely. Nothing is submitted, scored, or recorded.'
         : 'Endless: play any time. Your best goes on the all-time board.';
     }
   }
@@ -218,6 +263,46 @@ export class UI {
       `<span class="tg-label">Level</span><span class="tg-val">${hc ? 'Hardcore' : 'Normal'}</span><span class="tg-ico" aria-hidden="true">⇄</span>`;
     this.difficultyBtn.classList.toggle('hardcore', hc);
     this.difficultyBtn.setAttribute('aria-label', `Difficulty: ${hc ? 'Hardcore' : 'Normal'}. Activate to switch.`);
+  }
+
+  // ---------- Practice / health / offline ----------
+  setPracticeBadge(on){ this.practiceBadge.hidden = !on; }
+
+  // `state`: 'online' | 'offline' | null (hide — e.g. no Worker configured).
+  setHealth(state){
+    if (!state){ this.health.hidden = true; return; }
+    const offline = state === 'offline';
+    this.health.hidden = false;
+    this.health.classList.toggle('online', !offline);
+    this.health.classList.toggle('offline', offline);
+    this.healthText.textContent = offline ? 'Offline — local only' : 'Online';
+  }
+  setOfflineBanner(on){ this.offlineBanner.hidden = !on; }
+
+  // ---------- Achievement toasts (queued so simultaneous unlocks don't stack) ----------
+  showAchievement(a){
+    this._toastQueue.push(a);
+    this._drainToasts();
+  }
+  _drainToasts(){
+    if (this._toastBusy || !this._toastQueue.length) return;
+    this._toastBusy = true;
+    const a = this._toastQueue.shift();
+    this.toast.innerHTML =
+      `<span class="t-ico">${a.icon}</span>` +
+      `<span><span class="t-label">${escapeHtml(a.label)}</span>` +
+      `<div class="t-desc">${escapeHtml(a.desc)}</div></span>`;
+    this.toast.hidden = false;
+    // next frame so the transition runs from the hidden state
+    requestAnimationFrame(() => this.toast.classList.add('show'));
+    setTimeout(() => {
+      this.toast.classList.remove('show');
+      setTimeout(() => {
+        this.toast.hidden = true;
+        this._toastBusy = false;
+        this._drainToasts();
+      }, 260);
+    }, 2200);
   }
 
   // ---------- Settings overlay ----------

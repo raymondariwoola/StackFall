@@ -19,6 +19,11 @@
   <button id="settings-btn" aria-label="Settings">⚙️</button>
   <button id="pause-btn" aria-label="Pause game" hidden>⏸</button>
   <div id="cheat-badge" hidden>CHEATS ON</div>
+  <div id="practice-badge" hidden>PRACTICE</div>
+  <!-- Non-blocking: informs, never intercepts input or stops local play. -->
+  <div id="offline-banner" hidden>⚠ Offline — playing locally, scores saved on this device</div>
+  <!-- Achievement unlock toast (queued). -->
+  <div id="toast" hidden></div>
 
   <!-- Screen-reader status announcements (game start / over / paused). -->
   <div id="sr-status" class="sr-only" role="status" aria-live="polite" aria-atomic="true"></div>
@@ -47,12 +52,16 @@
       <div class="kbd-hint">Space / Enter to drop · P to pause</div>
       <div id="stats-strip" class="stats-strip" hidden></div>
       <div class="lb" id="lb-block">
-        <div class="lb-tabs" id="lb-tabs" role="tablist" aria-label="Leaderboards">
+        <div class="lb-tabs" id="lb-tabs" role="tablist" aria-label="Score boards">
           <button class="lb-tab active" data-tab="best" role="tab">Best</button>
-          <button class="lb-tab" data-tab="history" role="tab">History</button>
+          <button class="lb-tab" data-tab="history" role="tab">Runs</button>
+          <button class="lb-tab" data-tab="awards" role="tab">Awards</button>
           <button class="lb-tab" data-tab="global" role="tab" hidden>Global</button>
         </div>
         <div id="lb-list"></div>
+        <div id="health" class="health" hidden>
+          <span class="health-dot"></span><span id="health-text">Online</span>
+        </div>
       </div>
     </div>
   </div>

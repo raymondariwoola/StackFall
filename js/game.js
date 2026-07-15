@@ -24,6 +24,7 @@ export class Game {
     this.score = 0;
     this.combo = 0;
     this.maxCombo = 0;           // best streak reached this run (for history)
+    this.perfects = 0;           // total perfect drops this run (for achievements)
     this.floors = 0;
     this.settle = 0;             // squash animation amount for the top block
     this.baseW = 0;
@@ -58,6 +59,7 @@ export class Game {
     this.score = 0;
     this.combo = 0;
     this.maxCombo = 0;
+    this.perfects = 0;
     this.floors = 0;
     this.settle = 0;
     this.curWorld = 0;
@@ -137,6 +139,7 @@ export class Game {
     let newLayer;
     if (perfect){
       this.combo++;
+      this.perfects++;
       if (this.combo > this.maxCombo) this.maxCombo = this.combo;
       // Reward precision: grow the block back toward its base width.
       let nw = Math.min(this.baseW, top.w + diff.perfectRegenPx);
