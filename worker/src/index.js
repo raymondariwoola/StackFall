@@ -81,6 +81,13 @@ export default {
         return await handleCheat(request, env, cors);
       }
 
+      if (url.pathname === '/admin/boards' && request.method === 'GET') {
+        return await adminBoards(request, env, cors);
+      }
+      if (url.pathname === '/admin/reset' && request.method === 'POST') {
+        return await adminReset(request, env, cors);
+      }
+
       return json({ ok: false, error: 'not_found' }, 404, cors);
     } catch (err) {
       // Log the detail server-side; return a generic code so implementation,
@@ -168,6 +175,73 @@ async function handleCheat(request, env, cors) {
 
   const ok = timingSafeEqual(code, secret);
   return json({ ok }, ok ? 200 : 401, cors);
+}
+
+// ---------- /admin ----------
+// Durable Object storage has no dashboard, so without these the live boards are
+// a black box (which is exactly why KV appeared to "not match" the site — KV
+// only holds rate-limit counters plus abandoned pre-DO data).
+// Gated on the ADMIN_KEY secret: `npx wrangler secret put ADMIN_KEY`.
+function adminOk(request, env) {
+  const secret = env.ADMIN_KEY || '';
+  if (!secret) return false;
+  const given = request.headers.get('X-Admin-Key') || new URL(request.url).searchParams.get('key') || '';
+  return timingSafeEqual(given, secret);
+}
+
+// Board keys are fully derivable, so we can enumerate without keeping an index
+// (which would cost a KV write on the hot submit path).
+function enumerateBoardKeys(days) {
+  const keys = [boardKeyAll('normal'), boardKeyAll('hardcore')];
+  const now = Date.now();
+  for (let i = 0; i < days; i++) {
+    const day = dailySeedString(new Date(now - i * 86400000));
+    keys.push(boardKeyDay(day, 'normal'), boardKeyDay(day, 'hardcore'));
+    keys.push('board:day:' + day);   // legacy, pre-difficulty-split
+  }
+  keys.push('board:all');            // legacy, pre-difficulty-split
+  return keys;
+}
+
+async function adminBoards(request, env, cors) {
+  if (!adminOk(request, env)) return json({ ok: false, error: 'forbidden' }, 403, cors);
+  const days = Math.min(90, Math.max(1, intEnv(new URL(request.url).searchParams.get('days'), 7)));
+  const boards = [];
+  for (const key of enumerateBoardKeys(days)) {
+    const list = await boardRead(env, key);
+    if (list.length) boards.push({ key, entries: list.length, top: list[0] || null });
+  }
+  return json({ ok: true, store: env.LEADERBOARD_DO ? 'durable-object' : 'kv', days, boards }, 200, cors);
+}
+
+async function adminReset(request, env, cors) {
+  if (!adminOk(request, env)) return json({ ok: false, error: 'forbidden' }, 403, cors);
+  const days = Math.min(365, Math.max(1, intEnv(new URL(request.url).searchParams.get('days'), 120)));
+  const cleared = [];
+
+  // 1) Wipe the live boards (Durable Object storage).
+  for (const key of enumerateBoardKeys(days)) {
+    if (env.LEADERBOARD_DO) {
+      const r = await doOp(env, { op: 'clear', key });
+      if (r && r.cleared) cleared.push({ key, entries: r.cleared, store: 'do' });
+    }
+    // 2) …and the KV copy, for the pre-DO era and the KV fallback path.
+    try {
+      const raw = await env.LEADERBOARD.get(key);
+      if (raw) { await env.LEADERBOARD.delete(key); cleared.push({ key, store: 'kv' }); }
+    } catch (e) { /* ignore */ }
+  }
+
+  // 3) Sweep any remaining stray board:* keys left in KV.
+  try {
+    const listed = await env.LEADERBOARD.list({ prefix: 'board:' });
+    for (const k of listed.keys) {
+      await env.LEADERBOARD.delete(k.name);
+      cleared.push({ key: k.name, store: 'kv-sweep' });
+    }
+  } catch (e) { /* KV list unsupported/failed — non-fatal */ }
+
+  return json({ ok: true, clearedCount: cleared.length, cleared }, 200, cors);
 }
 
 // Length-independent, constant-time-ish string compare to avoid leaking the
@@ -267,6 +341,13 @@ export class Leaderboard {
       await this.state.storage.put(key, res.list);
       return Response.json({ list: res.list, rank: res.rank });
     }
+    // Admin: wipe this board. DO storage has no dashboard, so this is the only
+    // way to inspect/clear it.
+    if (op === 'clear') {
+      const had = ((await this.state.storage.get(key)) || []).length;
+      await this.state.storage.delete(key);
+      return Response.json({ cleared: had });
+    }
     return Response.json({ error: 'bad_op' }, { status: 400 });
   }
 }
@@ -281,11 +362,22 @@ function clientIp(request) {
 // which is the right trade-off for a casual game's spam/brute-force defence.
 async function rateLimit(env, bucket, ip, limit, windowSec) {
   if (!ip || !env.LEADERBOARD) return { ok: true };
-  const key = `rl:${bucket}:${ip}`;
+  // Bucket the key by window index so each window gets a FRESH key and a hard
+  // reset. The previous version reused one key and refreshed its TTL on every
+  // increment, which quietly turned a fixed window into a sliding one — an
+  // active player could stay throttled far longer than `windowSec`.
+  const nowSec = Math.floor(Date.now() / 1000);
+  const win = Math.floor(nowSec / windowSec);
+  const key = `rl:${bucket}:${ip}:${win}`;
   let count = 0;
   try { count = parseInt(await env.LEADERBOARD.get(key) || '0', 10) || 0; } catch (e) { /* fail open */ }
-  if (count >= limit) return { ok: false, retryAfter: windowSec };
-  try { await env.LEADERBOARD.put(key, String(count + 1), { expirationTtl: windowSec }); } catch (e) { /* fail open */ }
+  if (count >= limit) {
+    return { ok: false, retryAfter: windowSec - (nowSec % windowSec) };
+  }
+  // TTL only needs to outlive the window; KV enforces a 60s minimum.
+  try {
+    await env.LEADERBOARD.put(key, String(count + 1), { expirationTtl: Math.max(60, windowSec * 2) });
+  } catch (e) { /* fail open */ }
   return { ok: true };
 }
 

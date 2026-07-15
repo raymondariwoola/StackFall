@@ -120,6 +120,7 @@ const game = new Game({
       const isDaily = playedMode === 'daily';
       const submittedAs = Storage.name() || 'anon';   // the gate guarantees a real name
       let submittedRank = null;
+      ui.setSubmitResult(practice ? null : { state: 'pending', name: submittedAs });
       if (!practice){
         // Submit to the matching board (no-ops until WORKER_URL is set), then
         // refresh the panel with the latest standings. The `cheated` flag lets
@@ -128,10 +129,18 @@ const game = new Game({
         submitScore(submittedAs, score, cheated, isDaily, playedDifficulty)
           .then((res) => {
             setHealth('online');
-            submittedRank = (res && res.rank) || null;
+            submittedRank = res.rank || null;
+            // Tell the player the truth — a refused score must never render as
+            // "Submitted ✓".
+            ui.setSubmitResult(res.recorded
+              ? { state: 'ok', name: submittedAs, rank: res.rank }
+              : { state: 'refused', reason: res.error });
             refreshRemoteBoard(isDaily, playedDifficulty, submittedRank);
           })
-          .catch(() => setHealth('offline'));
+          .catch(() => {
+            setHealth('offline');
+            ui.setSubmitResult({ state: 'offline' });
+          });
       }
       clearTimeout(overlayTimer);
       announce(practice
@@ -415,7 +424,7 @@ async function start(){
   ui.setCombo(0);
   ui.setPauseButtonVisible(true);
   ui.setPracticeBadge(forMode === 'practice');   // explicit, persistent label
-  ui.submittedAs.hidden = true;                  // stale from the previous run
+  ui.setSubmitResult(null);                      // clear the previous run's outcome
   background.setWorld(worldFor(0));
   game.reset(seed);
   cheatMenu.updateBadge();   // reset() clears `cheated` — drop a stale badge

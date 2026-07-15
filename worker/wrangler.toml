@@ -55,3 +55,14 @@ BLOCK_CHEATED = "1"
 # is committed) — instead run:  npx wrangler secret put CHEAT_CODE
 # A secret set that way overrides this var. Leave unset/empty to disable cheats.
 # CHEAT_CODE = "change-me"
+
+# --- Admin (board introspection + flush) -------------------------------------
+# Durable Object storage has no dashboard, so /admin/boards and /admin/reset are
+# the only way to see or clear the live leaderboards. Both 403 unless ADMIN_KEY
+# is set. Like CHEAT_CODE it is a SECRET — never put it in this committed file:
+#   npx wrangler secret put ADMIN_KEY
+#
+#   # inspect the live boards
+#   curl "https://stackfall-lb.raymondariwoola.workers.dev/admin/boards?key=YOUR_KEY"
+#   # flush every board back to zero (also purges legacy pre-DO KV keys)
+#   curl -X POST "https://stackfall-lb.raymondariwoola.workers.dev/admin/reset?key=YOUR_KEY"

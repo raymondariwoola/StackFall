@@ -763,8 +763,12 @@ body.lb-page{ overflow-y: auto; background: linear-gradient(180deg, #12172B, #1b
   font-size: 10px; letter-spacing: 0.06em;
   color: var(--ink-dim);
   margin: -8px 0 10px;
+  line-height: 1.4;
 }
 .submitted-as strong{ color: var(--cyan); font-weight: 600; }
+/* A refused score must read as refused, not as a quiet footnote. */
+.submitted-as.refused{ color: var(--coral); }
+.submitted-as.refused strong{ color: var(--coral); }
 
 /* ---------- Reduced motion (system pref OR user toggle) ---------- */
 @media (prefers-reduced-motion: reduce){

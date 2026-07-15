@@ -132,17 +132,12 @@ export class UI {
     // Nothing to share for a practice run — it isn't recorded anywhere.
     this.shareBtn.hidden = practice;
 
-    // The score is already submitted under the name chosen at start. Say so
-    // plainly, and be honest that editing the field now applies to the NEXT run
-    // rather than pretending it can change a submission that already happened.
-    if (!practice && opts.submittedAs){
-      this.submittedAs.innerHTML =
-        `Submitted as <strong>${escapeHtml(opts.submittedAs)}</strong> ✓ — editing below renames your next run`;
-      this.submittedAs.hidden = false;
-      this.nameInput.setAttribute('aria-label', 'Player name for your next run');
-    } else {
-      this.submittedAs.hidden = true;
-    }
+    // Render whatever the submit actually did. The state is owned by
+    // setSubmitResult() (set the moment the run ends, updated when the Worker
+    // answers) so this can't race the 700ms collapse delay and overwrite a real
+    // outcome with an optimistic one.
+    if (!practice) this.nameInput.setAttribute('aria-label', 'Player name for your next run');
+    this._renderSubmitResult();
     this.updateNameGate();
     this.refreshBest();
     this.renderBoard();
@@ -313,6 +308,49 @@ export class UI {
       ? ' Hardcore: shot clock, spikes, quakes & blackouts — 2× points.'
       : '';
     this.modeDesc.textContent = m + d;
+  }
+
+  // ---------- Submit result ----------
+  // A submitted score can be refused (cheated run, rate limit, validation) and
+  // the response still be a perfectly happy HTTP 200. The player must be told,
+  // or scores appear to vanish. `r` is null | {state:'pending'|'ok'|'refused'|'offline', …}
+  setSubmitResult(r){
+    this._submitResult = r || null;
+    this._renderSubmitResult();
+  }
+  _renderSubmitResult(){
+    const el = this.submittedAs;
+    const r = this._submitResult;
+    if (!el) return;
+    if (!r){ el.hidden = true; return; }
+    el.hidden = false;
+    el.classList.remove('refused');
+
+    if (r.state === 'pending'){
+      el.innerHTML = `Submitting as <strong>${escapeHtml(r.name || '')}</strong>…`;
+      return;
+    }
+    if (r.state === 'ok'){
+      const rank = r.rank ? ` · rank <strong>#${r.rank}</strong>` : '';
+      el.innerHTML = `Submitted as <strong>${escapeHtml(r.name || '')}</strong> ✓${rank}` +
+        ` — editing below renames your next run`;
+      return;
+    }
+    el.classList.add('refused');
+    if (r.state === 'offline'){
+      el.innerHTML = `<strong>Not submitted</strong> — you're offline. Your local best is still saved.`;
+      return;
+    }
+    const why = {
+      cheated: 'cheats were used on this run',
+      rate_limited: 'too many submissions just now — try again in a minute',
+      bad_score: 'the score failed server validation',
+      bad_signature: 'the submission failed verification',
+      bad_json: 'the submission was malformed',
+      too_large: 'the submission was too large',
+      server_error: 'the leaderboard had an error',
+    }[r.reason] || 'the leaderboard refused it';
+    el.innerHTML = `<strong>Not recorded</strong> — ${why}.`;
   }
 
   // ---------- Practice / health / offline ----------

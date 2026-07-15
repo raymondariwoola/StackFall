@@ -41,7 +41,25 @@ export async function submitScore(name, score, cheated = false, daily = false, d
     headers: { 'Content-Type': 'application/json', 'X-Sig': sig },
     body,
   });
-  return res.json();
+
+  let data = null;
+  try { data = await res.json(); } catch (e) { /* non-JSON error page */ }
+
+  // IMPORTANT: a failed submit still resolves the fetch. A 429 (rate limited),
+  // a 401 (bad signature) and a 200 with `recorded:false` (cheated run refused)
+  // all look like success unless we check. Swallowing those is how scores went
+  // missing while the UI cheerfully reported them as submitted.
+  const ok = res.ok && !!(data && data.ok);
+  const recorded = ok && data.recorded !== false;
+  return {
+    ok,
+    recorded,
+    status: res.status,
+    // Normalized reason the score didn't land, for the UI to explain.
+    error: recorded ? null : ((data && data.error) || (data && data.cheated ? 'cheated' : null) || 'submit_failed'),
+    rank: (data && data.rank) || null,
+    scores: (data && data.scores) || null,
+  };
 }
 
 // Fetch the standings for one competition. `daily` selects today's board;

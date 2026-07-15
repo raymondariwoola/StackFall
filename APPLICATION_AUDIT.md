@@ -600,6 +600,69 @@ menu cannot be unlocked in production. It is a *passphrase*, not a flag — it m
 never go in `wrangler.toml` (that file is committed). To enable cheats:
 `npx wrangler secret put CHEAT_CODE`.
 
+## Scoring: recording, retrieval & visibility (2026-07-15)
+
+Reported symptom: "my 70-point run isn't recorded anywhere, and the scores on the
+board don't match the KV records." Two independent causes, both confirmed by
+reproduction rather than inspection alone.
+
+### High: The client treated every failed submit as a success — ✅ Fixed
+
+`submitScore` ended in a bare `return res.json()` with **no check of `res.ok` or
+`body.ok`**. A failed submit still *resolves* the fetch, so:
+
+- `429 rate_limited` → resolved → `.then()` → `setHealth('online')`
+- `401 bad_signature` → resolved → treated as success
+- `200 {ok:true, recorded:false, cheated:true}` (a run refused by
+  `BLOCK_CHEATED=1`) → resolved → treated as success
+
+…and in every case the panel rendered **"Submitted as NAME ✓"**. Scores appeared
+to vanish because the UI asserted success for submissions the Worker had
+explicitly refused. This is almost certainly what happened to the 70-point run:
+surviving 35 Hardcore floors at exactly 2 points/floor (zero perfects, through
+spikes, blackouts and a shot clock) is the signature of `invincible`/`noShrink`
+being engaged — the Worker correctly refused it, and the UI lied.
+
+Resolution: `submitScore` now returns a structured
+`{ ok, recorded, status, error, rank }` after checking `res.ok` **and**
+`body.ok` **and** `recorded`. The game-over panel reports the real outcome via
+`ui.setSubmitResult()` — "Submitted as NAME ✓ · rank #4", or a coral
+**"Not recorded — cheats were used on this run."** / "…too many submissions…" /
+"…failed verification." / "Not submitted — you're offline." The state is owned by
+the UI and set the moment the run ends, so it can't race the 700ms collapse
+delay and be overwritten by an optimistic message.
+
+### Medium: Rate limiter was a sliding window pretending to be fixed — ✅ Fixed
+
+`rateLimit` reused one key per IP and refreshed its TTL on **every** increment,
+so the window never reset while a player kept submitting. Reproduced: playing one
+run every 30s, the first `429` landed at submit #31. (It did self-heal after 60s
+idle — the initial "permanent lockout" theory was disproved by the test.) Fixed
+by bucketing the key per window index (`rl:score:<ip>:<window>`), giving a true
+hard reset each window and an accurate `Retry-After`.
+
+### Medium: The live boards were a black box — ✅ Fixed
+
+**Why KV "didn't match" the site:** once the Durable Object binding went live,
+boards moved into DO storage, which has **no dashboard**. The `board:all` and
+`board:day:2026-07-14` rows still visible in the KV namespace are *abandoned
+pre-DO data* that nothing reads. KV now only holds rate-limit counters. (The
+`KV_BINDING` snippet in the dashboard is Cloudflare's generic "Connect" example —
+the deployed binding is `LEADERBOARD`, as the deploy output confirms.)
+
+Resolution: two secret-gated admin routes (`ADMIN_KEY`, constant-time compared,
+403 when unset):
+
+- `GET /admin/boards?key=…&days=7` — lists live boards with entry counts and the
+  top entry, and reports which store is active (`durable-object` | `kv`).
+- `POST /admin/reset?key=…` — wipes every board back to zero: DO storage,
+  the KV fallback copies, the **legacy pre-split keys** (`board:all`,
+  `board:day:<day>`), plus a `board:*` KV sweep. Rate-limit counters are
+  deliberately preserved (they aren't scores).
+
+Board keys are enumerated deterministically rather than via an index, so this
+costs nothing on the hot submit path.
+
 ## Suggested implementation order
 
 1. ✅ **Done (2026-07-14)** — Fix mode propagation and fetch the correct daily
