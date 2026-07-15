@@ -19,7 +19,13 @@ export class CheatMenu {
     this.codeInput = document.getElementById('cheat-code');
     this.errorEl = document.getElementById('cheat-error');
     this.badge = document.getElementById('cheat-badge');
-    this.title = document.querySelector('.panel h1');
+    // Secret trigger surfaces: the start/game-over title, and the Pause title —
+    // the latter is the only way in mid-run on touch devices (there's no
+    // Backquote key on a phone).
+    this.titles = [
+      document.querySelector('.panel h1'),
+      document.getElementById('pause-title'),
+    ].filter(Boolean);
 
     this._taps = 0;
     this._tapTimer = null;
@@ -31,13 +37,16 @@ export class CheatMenu {
   }
 
   _attachTriggers(){
-    // 5 quick taps on the title. stopPropagation so these taps never start a run.
-    this.title.addEventListener('pointerdown', (e) => {
-      e.stopPropagation();
-      this._taps++;
-      clearTimeout(this._tapTimer);
-      this._tapTimer = setTimeout(() => { this._taps = 0; }, 1500);
-      if (this._taps >= 5){ this._taps = 0; this.open(); }
+    // 5 quick taps on a title. stopPropagation so these taps never start a run
+    // (start/game-over panel) or resume the game (pause overlay).
+    this.titles.forEach((title) => {
+      title.addEventListener('pointerdown', (e) => {
+        e.stopPropagation();
+        this._taps++;
+        clearTimeout(this._tapTimer);
+        this._tapTimer = setTimeout(() => { this._taps = 0; }, 1500);
+        if (this._taps >= 5){ this._taps = 0; this.open(); }
+      });
     });
     // Desktop shortcut.
     window.addEventListener('keydown', (e) => {
@@ -73,11 +82,14 @@ export class CheatMenu {
         this.updateBadge();
       });
     });
-    // Quick actions.
+    // Quick actions. These taint the run even though they engage no toggle, so
+    // the badge has to be refreshed or the player gets no signal that their
+    // score is about to be refused by the board.
     this.menuView.querySelectorAll('button[data-cheat-action]').forEach((el) => {
       el.addEventListener('click', () => {
         if (el.dataset.cheatAction === 'floors') this.game.cheatAddFloors(10);
         else if (el.dataset.cheatAction === 'score') this.game.cheatAddScore(100);
+        this.updateBadge();
       });
     });
   }
@@ -140,5 +152,12 @@ export class CheatMenu {
     });
   }
 
-  updateBadge(){ this.badge.hidden = !(Cheats.active && Cheats.anyEngaged()); }
+  // Show the badge whenever the CURRENT RUN is compromised — either a cheat is
+  // engaged, or a one-shot action (+floors/+score) already tainted it. Cheated
+  // runs are refused by the board (BLOCK_CHEATED=1), so this must never be
+  // silently wrong. Cleared automatically on the next run (game.reset).
+  updateBadge(){
+    const tainted = !!(this.game && this.game.cheated);
+    this.badge.hidden = !(Cheats.active && (Cheats.anyEngaged() || tainted));
+  }
 }

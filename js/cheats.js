@@ -1,8 +1,12 @@
 // Shared cheat state. The game reads these flags (only while `active`), the
 // cheat menu writes them. Unlock is validated against the Worker passphrase.
 //
-// Note: even with cheats on, runs are still submitted to the leaderboard —
-// that's an intentional product decision, not an oversight.
+// Every flag here is read live by game.js each drop/frame, so toggling a cheat
+// mid-run takes effect immediately — including the speed override, which the
+// game recomputes per frame for the block already in flight.
+//
+// A run that engages any cheat is flagged `cheated` and the Worker keeps it off
+// the global leaderboard (BLOCK_CHEATED=1). Local history still records it.
 
 export const Cheats = {
   unlocked: false,       // passphrase accepted this session

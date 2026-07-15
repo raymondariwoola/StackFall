@@ -301,14 +301,28 @@ setInterval(() => {
   if (mode === 'daily' && ui.overlay.classList.contains('show')) updateStats();
 }, 1000);
 
+let bgW = 0, bgH = 0;
 function resize(){
-  view.DPR = Math.min(window.devicePixelRatio || 1, CONFIG.DPR_CAP);
-  view.W = window.innerWidth;
-  view.H = window.innerHeight;
-  canvas.width = view.W * view.DPR;
-  canvas.height = view.H * view.DPR;
-  ctx.setTransform(view.DPR, 0, 0, view.DPR, 0, 0);
-  background.init(view.W, view.H);
+  const DPR = Math.min(window.devicePixelRatio || 1, CONFIG.DPR_CAP);
+  const W = window.innerWidth, H = window.innerHeight;
+  // Mobile browsers fire resize on every URL-bar show/hide. Reallocating the
+  // canvas backing store for a no-op change is pure jank.
+  if (W === view.W && H === view.H && DPR === view.DPR) return;
+
+  view.DPR = DPR;
+  view.W = W;
+  view.H = H;
+  canvas.width = W * DPR;
+  canvas.height = H * DPR;
+  ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
+
+  // Re-seeding the parallax field randomizes every shape, which reads as a
+  // visible "jump". Only do it on a real size change (rotation / resize), not
+  // for the ~60-100px the URL bar moves.
+  if (Math.abs(W - bgW) > 8 || Math.abs(H - bgH) > 100){
+    background.init(W, H);
+    bgW = W; bgH = H;
+  }
 }
 
 // ---------- First-run tutorial ----------
@@ -404,6 +418,7 @@ async function start(){
   ui.submittedAs.hidden = true;                  // stale from the previous run
   background.setWorld(worldFor(0));
   game.reset(seed);
+  cheatMenu.updateBadge();   // reset() clears `cheated` — drop a stale badge
   const diffLabel = difficulty === 'hardcore' ? ' hardcore' : '';
   const modeLabel = forMode === 'daily' ? 'Daily' : forMode === 'practice' ? 'Practice' : 'Endless';
   announce(modeLabel + diffLabel + ' run started' + (forMode === 'practice' ? ' — nothing will be recorded' : ''));

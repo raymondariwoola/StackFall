@@ -515,6 +515,91 @@ confirms **"Submitted as NAME ✓ — editing below renames your next run"**, wh
 is honest about what the field does rather than implying it can retroactively
 change a submission that already happened.
 
+## Mobile, CORS & cheat access (2026-07-15)
+
+### Medium: iOS force-zoomed the page on input focus — ✅ Fixed
+
+`#name-input` (14px) and `#cheat-code` (15px) were both under 16px, and iOS
+Safari force-zooms the viewport when focusing an input smaller than that — the
+"weird browser zoom" on mobile. Both are now 16px. Also added
+`-webkit-text-size-adjust: 100%` (stops iOS inflating text on rotation) and
+`overscroll-behavior: none` (stops Chrome Android pull-to-refresh firing on a
+downward swipe during play).
+
+### Medium: Overlays clipped instead of scrolling on short screens — ✅ Fixed
+
+`#overlay` was a centered flexbox (`align-items:center`) with no overflow
+handling, and `.panel` had no max-height. Centering a flex item taller than its
+container clips the top and makes it **unreachable** — and the panel had grown to
+carry name, hint, Start, Share, two toggles, description, hint, stats strip, four
+tabs, board and health. On a short phone the Start button could end up
+off-screen. Fixed by dropping `align-items:center` in favour of `margin: auto 0`
+on the panel (centers when it fits, degrades to a normal scroll when it doesn't)
+plus `overflow-y:auto`. Same fix applied to the tutorial and settings overlays.
+Verified on iPhone SE / Pixel 5 / iPhone 14 Pro Max: no horizontal overflow, no
+clipping, Start always reachable.
+
+### Low: Resize churn from mobile URL bars — ✅ Fixed
+
+`resize()` reallocated the canvas backing store and re-seeded the 18-shape
+parallax field on *every* resize event. Mobile browsers fire that on each URL-bar
+show/hide, which re-randomized the shapes (a visible "jump") and thrashed the
+canvas. Now a no-op when nothing actually changed, and the parallax field is only
+rebuilt on a real size change (>8px wide / >100px tall), not the ~60-100px the
+URL bar moves.
+
+**Perf was measured, not guessed:** on an emulated Pixel 5 under **4× CPU
+throttling**, live gameplay held a 16.7ms median frame (60fps), 17.7ms p95, 18.3ms
+worst. No jank. Speculative optimizations (lowering `DPR_CAP`, caching the
+per-frame gradients) were therefore **not** made — they'd cost visual quality for
+no measured gain.
+
+### Medium: Cheat menu was unreachable mid-run on touch devices — ✅ Fixed
+
+The only entry points were 5 taps on the start/game-over title (hidden during a
+run) and the Backquote key (no such key on a phone) — so on mobile there was no
+way in once a run started. The same 5-tap trigger is now also attached to the
+**Pause title**, which is the natural mid-run surface. Taps `stopPropagation` so
+they don't resume the game, and closing the cheat menu restores the prior pause
+state rather than dumping you back into play.
+
+### Medium: The speed cheat didn't affect the block already in flight — ✅ Fixed
+
+Every cheat was read live each drop/frame **except** `speedOverride`, which was
+baked into the block's speed at spawn — so changing Block Speed mid-run did
+nothing until the next block. Speed is now recomputed per frame
+(`game._movingSpeed()`), so it applies to the block in flight and reverts live
+when cleared. The seeded hardcore "gust" factor is stored per-block and the RNG
+draw still happens unconditionally, so **Daily determinism is unaffected**.
+
+### Medium: Cheat badge lied about a tainted run — ✅ Fixed
+
+The `+10 Floors` / `+100 pts` quick actions flag the run as cheated but engage no
+toggle, and `anyEngaged()` only tracked toggles — so the CHEATS ON badge stayed
+hidden. Now that `BLOCK_CHEATED="1"`, that meant a player could tap a quick
+action out of curiosity and have their score **silently refused** by the board
+with no indication. The badge now reflects the run's actual `cheated` state, and
+is refreshed on quick actions and cleared on the next run.
+
+### Low: Worker CORS was open to any origin — ✅ Fixed
+
+`ALLOW_ORIGIN` is now `https://raymondariwoola.github.io` rather than `*`. It
+accepts a **comma-separated allowlist**: the Worker echoes the caller's `Origin`
+only when it matches, and sets `Vary: Origin` so caches can't cross-serve.
+Non-matching callers get the canonical origin back, which their browser refuses.
+`*` still short-circuits to the old behaviour. To develop against the deployed
+Worker, append a dev origin, e.g.
+`ALLOW_ORIGIN = "https://raymondariwoola.github.io,http://127.0.0.1:8137"`.
+
+**`BLOCK_CHEATED` is now `"1"`** — cheated runs are kept off the global board
+(they still appear in local history). The cheat-menu note and `js/cheats.js`
+header were corrected, as both still claimed cheated runs were submitted.
+
+**`CHEAT_CODE` remains unset**, so `/cheat` returns `403 cheats_disabled` and the
+menu cannot be unlocked in production. It is a *passphrase*, not a flag — it must
+never go in `wrangler.toml` (that file is committed). To enable cheats:
+`npx wrangler secret put CHEAT_CODE`.
+
 ## Suggested implementation order
 
 1. ✅ **Done (2026-07-14)** — Fix mode propagation and fetch the correct daily
@@ -555,8 +640,11 @@ after the Worker is redeployed:
   `/StackFall/` GitHub Pages subpath with no config. Note for later: the
   deferred service worker would need to cache **two** HTML entries.
 - **Optional tunables** (all have safe defaults in `wrangler.toml`, no change
-  needed): `SCORE_RATE_LIMIT`, `CHEAT_RATE_LIMIT`, `RETENTION_DAYS`,
-  `ALLOW_ORIGIN` (still `*` — tighten to the GitHub Pages origin when ready).
+  needed): `SCORE_RATE_LIMIT`, `CHEAT_RATE_LIMIT`, `RETENTION_DAYS`.
+- **`ALLOW_ORIGIN` is now locked** to `https://raymondariwoola.github.io` and
+  `BLOCK_CHEATED` is `"1"` — both require a redeploy to take effect. If you
+  later serve the game from another origin (custom domain, Pages preview), add
+  it to the comma-separated allowlist or the browser will block the API.
 - **Durable Objects on the free plan**: the DO is SQLite-backed, which is
   free-plan eligible. If the account is on a very old Workers configuration and
   the migration is rejected, either enable the current DO/SQLite defaults or

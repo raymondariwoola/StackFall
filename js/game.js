@@ -82,27 +82,39 @@ export class Game {
     this.running = true;
   }
 
+  // Effective swing speed, recomputed every frame so the Slow-Motion/Block-Speed
+  // cheats affect the block ALREADY in flight, not just the next one to spawn.
+  _movingSpeed(){
+    const { W } = this.view;
+    const diff = Difficulty.get();
+    // A fixed-speed cheat means fixed — it overrides the ramp and the gust.
+    if (Cheats.active && Cheats.speedOverride != null) return baseSpeed(W) * Cheats.speedOverride;
+    const mult = Math.min(diff.maxSpeedMult, 1 + this.floors * diff.speedStep);
+    return baseSpeed(W) * mult * ((this.moving && this.moving.gust) || 1);
+  }
+
   _spawnMoving(){
     const { W } = this.view;
     const diff = Difficulty.get();
     const top = this.stack[this.stack.length - 1];
-    let mult = (Cheats.active && Cheats.speedOverride != null)
-      ? Cheats.speedOverride
-      : Math.min(diff.maxSpeedMult, 1 + this.floors * diff.speedStep);
     const dir = this.rng.bool() ? 1 : -1;
     // Hardcore "gust": a deterministic (seeded) per-floor speed jitter so the
     // swing timing is unpredictable but identical for everyone on a Daily seed.
-    if (diff.gust > 0) mult *= 1 + (this.rng.next() - 0.5) * 2 * diff.gust;
+    // Drawn unconditionally (even under a speed cheat) to keep the RNG sequence
+    // — and therefore Daily determinism — stable.
+    const gust = diff.gust > 0 ? 1 + (this.rng.next() - 0.5) * 2 * diff.gust : 1;
     const floor = this.stack.length;
     this.moving = {
       x: dir === 1 ? 0 : (W - top.w),
       w: top.w,
       dir,
-      speed: baseSpeed(W) * mult,
+      gust,
+      speed: 0,
       floor,
       // Hardcore "invisible floors": the swinging block flickers near-invisible.
       invisible: diff.invisibleEvery > 0 && floor > 0 && floor % diff.invisibleEvery === 0,
     };
+    this.moving.speed = this._movingSpeed();
 
     // Hardcore shot clock: a per-drop time limit that tightens slowly with
     // height; expiry force-drops the block wherever it happens to swing.
@@ -326,6 +338,8 @@ export class Game {
     }
 
     if (this.running && !this.paused && this.moving){
+      // Live, so toggling a speed cheat mid-run takes effect immediately.
+      this.moving.speed = this._movingSpeed();
       this.moving.x += this.moving.dir * this.moving.speed * dt;
       if (this.moving.x <= 0){ this.moving.x = 0; this.moving.dir = 1; }
       if (this.moving.x + this.moving.w >= W){ this.moving.x = W - this.moving.w; this.moving.dir = -1; }

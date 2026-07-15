@@ -27,7 +27,7 @@ const DEFAULT_RETENTION = 7;  // how many past days a daily board may be queried
 export default {
   async fetch(request, env) {
     const url = new URL(request.url);
-    const cors = corsHeaders(env);
+    const cors = corsHeaders(env, request);
 
     if (request.method === 'OPTIONS') {
       return new Response(null, { status: 204, headers: cors });
@@ -362,12 +362,28 @@ async function sha256hex(str) {
   const digest = await crypto.subtle.digest('SHA-256', data);
   return [...new Uint8Array(digest)].map((b) => b.toString(16).padStart(2, '0')).join('');
 }
-function corsHeaders(env) {
-  return {
-    'Access-Control-Allow-Origin': env.ALLOW_ORIGIN || '*',
+// ALLOW_ORIGIN is either '*' or a comma-separated allowlist. For a list we echo
+// the caller's Origin only when it matches (with Vary: Origin so caches don't
+// cross-serve), which keeps the lockdown strict while still letting you add a
+// localhost origin for development.
+function corsHeaders(env, request) {
+  const base = {
     'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
     'Access-Control-Allow-Headers': 'Content-Type, X-Sig',
     'Access-Control-Max-Age': '86400',
+  };
+  const allow = (env.ALLOW_ORIGIN || '*').trim();
+  if (allow === '*') return { ...base, 'Access-Control-Allow-Origin': '*' };
+
+  const list = allow.split(',').map((s) => s.trim()).filter(Boolean);
+  const origin = (request && request.headers.get('Origin')) || '';
+  const ok = list.indexOf(origin) !== -1;
+  return {
+    ...base,
+    // Non-matching callers get the canonical origin back, which their browser
+    // will refuse — that's the deny path.
+    'Access-Control-Allow-Origin': ok ? origin : (list[0] || 'null'),
+    'Vary': 'Origin',
   };
 }
 function json(obj, status, cors) {

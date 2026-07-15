@@ -29,8 +29,12 @@ new_sqlite_classes = ["Leaderboard"]
 [vars]
 # Must match the salt in js/leaderboard.js (signPayload). Not a real secret.
 SIGN_SALT = "stackfall"
-# Restrict to your site's origin in production, e.g. "https://stackfall.pages.dev"
-ALLOW_ORIGIN = "*"
+# Locked to the live GitHub Pages origin. Accepts a comma-separated allowlist —
+# the Worker echoes the caller's Origin only when it matches. To develop against
+# the deployed Worker, temporarily append your dev origin, e.g.:
+#   ALLOW_ORIGIN = "https://raymondariwoola.github.io,http://127.0.0.1:8137"
+# Set back to "*" only if you intentionally want an open API.
+ALLOW_ORIGIN = "https://raymondariwoola.github.io"
 # Reject implausible scores server-side.
 MAX_SCORE = "100000"
 # Per-IP rate limits over a rolling 60s window (soft, KV-backed).
@@ -43,7 +47,9 @@ RETENTION_DAYS = "7"
 # Keep cheated runs off the GLOBAL leaderboard. "1" = block (default),
 # "0" = allow cheated scores onto the board. (They always stay on the
 # player's local "Your Best Runs" board regardless.)
-BLOCK_CHEATED = "0"
+# Set to "1" now that the cheat menu is reachable in-game — otherwise a cheated
+# run could top a real board.
+BLOCK_CHEATED = "1"
 
 # Secret cheat-menu passphrase. For real secrecy, DON'T put it here (this file
 # is committed) — instead run:  npx wrangler secret put CHEAT_CODE
