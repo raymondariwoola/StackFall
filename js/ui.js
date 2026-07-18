@@ -2,7 +2,7 @@
 
 import { Storage } from './storage.js';
 import { ACHIEVEMENTS } from './achievements.js';
-import { escapeHtml, renderScoreRows, boardLabel, findRank } from './board.js';
+import { escapeHtml, renderScoreRows, boardLabel, findRank, formatEntryTime } from './board.js';
 
 export class UI {
   constructor(){
@@ -233,9 +233,39 @@ export class UI {
 
   // Best: this device's top scores (works fully offline).
   _renderBest(){
-    const list = Storage.scores().slice().sort((a, b) => b - a).slice(0, 8);
+    // Scores predate rich run history, so pair matching history records where
+    // possible and keep a graceful label for older score-only entries.
+    const entries = Storage.scores().map((score, index) => ({ score, index, run: null }));
+    const runs = Storage.runs().filter((r) => r && r.mode !== 'practice');
+    for (const run of runs){
+      // Both stores are chronological; matching backwards associates duplicate
+      // scores with the correct most-recent run instead of reusing one record.
+      for (let i = entries.length - 1; i >= 0; i--){
+        if (!entries[i].run && entries[i].score === Number(run.score)){
+          entries[i].run = run;
+          break;
+        }
+      }
+    }
+    const list = entries
+      .sort((a, b) => b.score - a.score || a.index - b.index)
+      .slice(0, 8);
+    const player = Storage.name() || 'Your run';
+    const rows = list.map((entry, i) => {
+      const run = entry.run;
+      const details = [];
+      if (run){
+        details.push(run.mode === 'daily' ? 'Daily' : 'Endless');
+        details.push(run.difficulty === 'hardcore' ? 'Hardcore' : 'Normal');
+      }
+      const when = run ? formatEntryTime(run.ts) : '';
+      details.push(when || 'Saved on this device');
+      return `<div class="lb-row"><span class="lb-player">#${i + 1} ${escapeHtml(player)}` +
+        `<span class="lb-time">${escapeHtml(details.join(' · '))}</span></span>` +
+        `<span class="lb-points">${entry.score} pts</span></div>`;
+    }).join('');
     this.lbList.innerHTML = list.length
-      ? list.map((s, i) => `<div class="lb-row"><span>#${i + 1}</span><span>${s} pts</span></div>`).join('')
+      ? '<div class="rank-line">Your Best Runs</div>' + rows
       : '<div class="lb-row"><span>No runs yet</span><span>—</span></div>';
   }
 
