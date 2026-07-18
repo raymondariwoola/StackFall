@@ -2,7 +2,7 @@
 
 import { Storage } from './storage.js';
 import { ACHIEVEMENTS } from './achievements.js';
-import { escapeHtml, renderScoreRows, boardLabel } from './board.js';
+import { escapeHtml, renderScoreRows, boardLabel, findRank } from './board.js';
 
 export class UI {
   constructor(){
@@ -197,13 +197,25 @@ export class UI {
   // Store the latest remote standings; render now if the Global tab is active.
   // meta: { daily, difficulty, rank }
   renderRemoteScores(scores, myName, meta = {}){
+    const daily = !!meta.daily;
+    const difficulty = meta.difficulty === 'hardcore' ? 'hardcore' : 'normal';
+    const sameBoardAndPlayer =
+      this._remote.daily === daily &&
+      this._remote.difficulty === difficulty &&
+      this._remote.myName === (myName || '');
+    const visibleRank = findRank(scores, myName);
+
     this._remote = {
       scores: scores || [],
       myName: myName || '',
-      daily: !!meta.daily,
-      difficulty: meta.difficulty === 'hardcore' ? 'hardcore' : 'normal',
-      // Keep a known rank if this refresh didn't carry one.
-      rank: meta.rank != null ? meta.rank : this._remote.rank,
+      daily,
+      difficulty,
+      // A POST can provide a rank beyond the fetched top 20. Retain that rank
+      // only while refreshing the same player's same board; otherwise derive
+      // it from the new standings so a rank cannot leak between competitions.
+      rank: meta.rank != null
+        ? meta.rank
+        : (visibleRank || (sameBoardAndPlayer ? this._remote.rank : 0)),
     };
     this.setFullBoardLink(this._remote.daily, this._remote.difficulty);
     if (this.currentTab === 'global') this._renderGlobal();
