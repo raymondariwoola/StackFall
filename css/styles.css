@@ -219,11 +219,24 @@ canvas{ display:block; width:100%; height:100%; position:relative; z-index:0; }
   padding-top: 14px;
 }
 .lb-row{
-  display:flex; justify-content:space-between;
+  display:flex; align-items:center; justify-content:space-between; gap: 12px;
   padding: 3px 0;
   color: var(--ink-dim);
 }
 .lb-row.me{ color: var(--cyan); }
+.lb-player{ min-width: 0; overflow-wrap: anywhere; }
+.lb-points{ flex: 0 0 auto; padding-top: 1px; white-space: nowrap; }
+.lb-time{
+  display:block;
+  margin-top: 1px;
+  font-size: 9px;
+  line-height: 1.25;
+  letter-spacing: 0.02em;
+  font-variant-numeric: tabular-nums;
+  color: var(--ink-dim);
+  opacity: 0.78;
+}
+.lb-row.me .lb-time{ color: currentColor; }
 .lb-title{
   font-size: 11px;
   letter-spacing: 0.14em;
@@ -519,7 +532,7 @@ canvas{ display:block; width:100%; height:100%; position:relative; z-index:0; }
 .toggle-btn{
   display:flex; align-items:center; justify-content:center; gap: 7px;
   padding: 8px 12px;
-  min-height: 42px;   /* comfortable touch target */
+  min-height: 44px;   /* comfortable touch target */
   background: rgba(245,243,236,0.05);
 }
 .toggle-btn .tg-label{
@@ -579,7 +592,7 @@ canvas{ display:block; width:100%; height:100%; position:relative; z-index:0; }
   padding: 6px 2px;
   cursor: pointer;
   white-space: nowrap;
-  min-height: 34px;   /* finger-friendly without wrapping four tabs */
+  min-height: 44px;   /* reliable touch target on compact phones */
 }
 .lb-tab.active{ color: var(--bg); background: var(--ink); border-color: var(--ink); }
 .lb-row .meta{ font-size: 10px; color: var(--ink-dim); letter-spacing: 0.04em; }
@@ -714,7 +727,7 @@ body.lb-page{ overflow-y: auto; background: linear-gradient(180deg, #12172B, #1b
   background: transparent; border: none;
   border-radius: 999px;
   padding: 7px 14px;
-  min-height: 40px;   /* comfortable touch target */
+  min-height: 44px;   /* comfortable touch target */
   cursor: pointer;
 }
 .seg-btn.active{ color: var(--bg); background: var(--ink); }
@@ -731,6 +744,7 @@ body.lb-page{ overflow-y: auto; background: linear-gradient(180deg, #12172B, #1b
   padding: 10px 14px;
 }
 .lb-full .lb-row{ padding: 7px 0; font-size: 13px; border-bottom: 1px solid rgba(245,243,236,0.06); }
+.lb-full .lb-time{ font-size: 10px; }
 .lb-full .lb-row:last-child{ border-bottom: none; }
 .lb-foot{ margin-top: 18px; text-align:center; }
 .lb-foot .health{ margin-bottom: 6px; }
@@ -748,8 +762,69 @@ body.lb-page{ overflow-y: auto; background: linear-gradient(180deg, #12172B, #1b
 .rank-line{
   text-align:center;
   font-size: 12px;
+  line-height: 1.4;
   color: var(--amber);
   padding: 2px 0 8px;
+}
+
+/* ---------- Compact phones / narrow leaderboard layouts ---------- */
+@media (max-width: 480px){
+  /* Use nearly all available width while respecting notches in landscape. */
+  #overlay{
+    padding-top: max(12px, env(safe-area-inset-top));
+    padding-right: max(14px, env(safe-area-inset-right));
+    padding-bottom: max(16px, env(safe-area-inset-bottom));
+    padding-left: max(14px, env(safe-area-inset-left));
+  }
+  .panel{ width: min(320px, 100%); }
+  .panel h1{ font-size: clamp(34px, 11vw, 42px); line-height: 1.05; }
+  .panel .sub{ line-height: 1.4; }
+  .lb{ margin-top: 22px; }
+  .lb-row{ gap: 8px; }
+  .lb-player{ line-height: 1.3; }
+  .lb-tabs{ gap: 4px; }
+  .lb-tab{ font-size: 9px; letter-spacing: 0.02em; }
+
+  body.lb-page{ overflow-x: hidden; }
+  #lb-wrap{
+    padding-top: max(18px, env(safe-area-inset-top));
+    padding-right: max(12px, env(safe-area-inset-right));
+    padding-bottom: max(28px, env(safe-area-inset-bottom));
+    padding-left: max(12px, env(safe-area-inset-left));
+  }
+  .lb-head{ margin-bottom: 16px; }
+  .lb-head #back-link{
+    min-height: 44px;
+    display: inline-flex;
+    align-items: center;
+  }
+  .lb-head h1{
+    font-size: clamp(24px, 8vw, 30px);
+    line-height: 1.1;
+    overflow-wrap: anywhere;
+  }
+  .lb-head .sub{ font-size: 11px; line-height: 1.45; }
+  .lb-status{ line-height: 1.4; }
+  .lb-full{ padding: 6px 10px; }
+  .lb-full .lb-row{ align-items: flex-start; gap: 8px; padding: 9px 0; }
+  .lb-full .lb-time{ font-size: 9px; line-height: 1.35; }
+}
+
+@media (max-width: 400px){
+  /* Stack each filter group and let both options share the full row. */
+  .lb-filters{ gap: 8px; }
+  .lb-seg{ width: 100%; }
+  .seg-btn{ flex: 1; min-width: 0; padding-right: 10px; padding-left: 10px; }
+}
+
+/* Short phones can scroll the panel; tighter rhythm keeps key controls nearby. */
+@media (max-height: 700px) and (max-width: 480px){
+  .eyebrow{ margin-bottom: 7px; }
+  .panel .sub{ margin-bottom: 14px; }
+  .toggle-row{ margin-top: 10px; }
+  .mode-desc{ margin-top: 7px; }
+  .stats-strip{ margin-top: 10px; }
+  .lb{ margin-top: 16px; padding-top: 10px; }
 }
 /* Name field is required to play — flag an empty one. */
 #name-input.needed{ border-color: rgba(232,163,61,0.65); }
