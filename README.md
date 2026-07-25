@@ -32,8 +32,10 @@ StackFall/
 ├── shared/               # versioned browser/Worker multiplayer contracts
 ├── tests/                # dependency-free Node test suite
 ├── package.json          # one-command syntax + behavior validation
-└── worker/               # optional Cloudflare Worker (leaderboard + daily seed)
-    ├── src/index.js
+└── worker/               # Cloudflare Worker (boards, daily seed, Duel rooms)
+    ├── src/index.js      # public router + leaderboard Durable Object
+    ├── src/match-room.js # hibernating two-player room Durable Object
+    ├── integration/      # real HTTP/WebSocket local integration client
     ├── wrangler.toml
     └── package.json
 ```
@@ -64,6 +66,27 @@ npm test
 This runs JavaScript syntax checks plus the game, run-context, Duel-contract,
 room-state, and Worker-validation tests. It installs no dependencies.
 
+### Run the real Worker integration test
+
+Install the Worker's locked development dependencies once, then use two
+terminals:
+
+```bash
+cd worker
+npm ci
+npm run dev -- --local --port 8788
+```
+
+```bash
+cd worker
+npm run test:integration
+```
+
+The integration client creates and joins a room, opens both WebSockets, reclaims
+the host seat as a refreshed client, rejects ticket replay, completes a match,
+and verifies the result. It targets `http://127.0.0.1:8788` by default; override
+that with `STACKFALL_WORKER_URL` when deliberately testing another environment.
+
 ---
 
 ## Deploy so other people can play
@@ -91,7 +114,7 @@ the Worker's `ALLOW_ORIGIN` before deploying.
 > At this point the game is live. Scores are stored per-device and the daily
 > board is computed locally. Do Part B/C only if you want a **shared** leaderboard.
 
-### Part B — Deploy the leaderboard Worker (optional)
+### Part B — Deploy the backend Worker (optional)
 
 ```bash
 cd worker
@@ -118,6 +141,10 @@ Then deploy:
 ```bash
 npx wrangler deploy
 ```
+
+Wrangler also applies the committed SQLite Durable Object migrations. Migration
+`v1` owns the leaderboard and `v2` adds multiplayer rooms; no separate database
+or Cloudflare dashboard resource is required for `MatchRoom`.
 
 Wrangler prints your Worker URL, e.g.
 `https://stackfall-lb.YOURNAME.workers.dev`. Sanity-check it in a browser:
@@ -157,19 +184,30 @@ curl https://stackfall-lb.YOURNAME.workers.dev/daily
 
 ## Worker API
 
-| Method | Path                  | Returns                                             |
-|--------|-----------------------|-----------------------------------------------------|
-| GET    | `/`                   | health / endpoint list                              |
-| GET    | `/daily`              | `{ seed, day }` — deterministic per UTC day          |
-| GET    | `/leaderboard`        | `{ scope:"all", day, scores:[…20] }`                 |
-| GET    | `/leaderboard?daily=1`| `{ scope:"daily", day, scores:[…20] }`               |
-| POST   | `/score`              | `{ ok, rank, dailyRank, scores:[…20] }`              |
-| POST   | `/cheat`              | `{ ok }` validates the cheat passphrase             |
+| Method | Path                                  | Purpose / return |
+|--------|---------------------------------------|------------------|
+| GET    | `/`                                   | health / endpoint list |
+| GET    | `/daily`                              | deterministic `{ seed, day }` |
+| GET    | `/leaderboard`                        | all-time board |
+| GET    | `/leaderboard?daily=1`                | daily board |
+| POST   | `/score`                              | validate and record a score |
+| POST   | `/cheat`                              | validate the cheat passphrase |
+| POST   | `/matches`                            | create a room; returns host capability |
+| GET    | `/matches/:code`                      | safe public room snapshot |
+| POST   | `/matches/:code/join`                 | claim the guest seat; returns guest capability |
+| POST   | `/matches/:code/socket-ticket`        | exchange a Bearer capability for a one-use ticket |
+| GET    | `/matches/:code/socket?ticket=…`      | origin-checked WebSocket upgrade |
 
 `POST /score` body: `{ name, score, day, ts }` with an `X-Sig` header (the client
 sets both automatically). The Worker sanitizes names, rejects implausible scores,
 and stores the top 50 per board in the serialized `Leaderboard` Durable Object.
 KV remains the rate-limit store and automatic leaderboard fallback.
+
+Multiplayer capabilities are bearer secrets and are never returned by the
+public room-state route. The future browser client stores its own capability in
+`sessionStorage`, exchanges it for a 60-second one-use socket ticket, and puts
+only that ticket in the WebSocket URL. Room codes use eight human-safe
+characters displayed as `XXXX-XXXX`; the first guest claims the only open seat.
 
 ---
 

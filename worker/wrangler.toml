@@ -21,9 +21,17 @@ id = "c1a7179f0c6d4ed497bdb5c88f8885e8"
 name = "LEADERBOARD_DO"
 class_name = "Leaderboard"
 
+[[durable_objects.bindings]]
+name = "MATCH_ROOM"
+class_name = "MatchRoom"
+
 [[migrations]]
 tag = "v1"
 new_sqlite_classes = ["Leaderboard"]
+
+[[migrations]]
+tag = "v2"
+new_sqlite_classes = ["MatchRoom"]
 
 # --- Tunables (safe to leave as-is) ------------------------------------------
 [vars]
@@ -41,6 +49,10 @@ MAX_SCORE = "100000"
 # SCORE_RATE_LIMIT bounds score spam; CHEAT_RATE_LIMIT throttles passphrase guesses.
 SCORE_RATE_LIMIT = "30"
 CHEAT_RATE_LIMIT = "5"
+MATCH_CREATE_RATE_LIMIT = "10"
+MATCH_JOIN_RATE_LIMIT = "30"
+MATCH_MESSAGE_RATE_LIMIT = "60"
+MULTIPLAYER_ENABLED = "1"
 # How many past days a daily board (`/leaderboard?daily=1&day=YYYY-MM-DD`) may be
 # queried. 0 = today only. Anything outside a strict YYYY-MM-DD in this window is rejected.
 RETENTION_DAYS = "7"

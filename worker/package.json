@@ -7,9 +7,11 @@
   "scripts": {
     "dev": "wrangler dev",
     "deploy": "wrangler deploy",
+    "test:integration": "node integration/duel.mjs",
     "tail": "wrangler tail"
   },
   "devDependencies": {
-    "wrangler": "^4.110.0"
+    "wrangler": "^4.110.0",
+    "ws": "^8.21.1"
   }
 }

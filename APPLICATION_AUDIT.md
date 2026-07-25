@@ -7,6 +7,33 @@ GitHub Pages/Worker deployment shape visible in this repository. This is a
 static code audit; production behavior, DNS, deployed Worker variables, KV
 contents, and real-device behavior were not directly inspected.
 
+## Multiplayer Phase 1 room backend (2026-07-25)
+
+Phase 1 of `MULTIPLAYER_PLAN.md` is complete locally. The existing Worker now
+has a separate SQLite-backed `MatchRoom` Durable Object and a declarative `v2`
+migration. It supports anonymous two-seat room creation/join, safe lobby reads,
+hashed host/guest capabilities, short-lived one-use socket tickets, and
+origin-checked hibernatable WebSockets.
+
+The room owns countdown seeds and timestamps, lifecycle transitions, validated
+ordered progress, deterministic result comparison, reconnect replacement,
+30-second disconnect grace, rematches, expiry alarms, and permanent cleanup.
+Coarse create/join limits use the existing KV binding; socket bursts are limited
+using counters serialized with each hibernatable connection. `MULTIPLAYER_ENABLED`
+provides a backend kill switch without disabling leaderboards.
+
+Validation evidence:
+
+- root `npm test`: 29/29 tests pass;
+- Wrangler deployment bundle dry run: passes with both Durable Object bindings;
+- local Wrangler integration: two real WebSocket clients complete a match,
+  including ticket replay rejection and refreshed-host seat reclamation;
+- the existing leaderboard tests remain green.
+
+This is backend-only. No production Worker deployment occurred, and no Duel UI
+is exposed by the static game yet. A future approved `npx wrangler deploy` will
+apply migration `v2`; Phase 2 adds the challenge-link and lobby experience.
+
 ## Multiplayer Phase 0 foundation (2026-07-25)
 
 Phase 0 of `MULTIPLAYER_PLAN.md` is complete. It intentionally adds no live

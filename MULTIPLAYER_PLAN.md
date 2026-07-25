@@ -1,7 +1,7 @@
 # StackFall Two-Player Multiplayer Plan
 
-Status: implementation in progress · Prepared: 2026-07-25 · Phase 0 completed:
-2026-07-25
+Status: implementation in progress · Prepared: 2026-07-25 · Phases 0–1
+completed: 2026-07-25
 
 ## Decision
 
@@ -361,7 +361,7 @@ Result:
 No Cloudflare or GitHub dashboard action was required for this phase. The
 `BLOCK_CHEATED` source correction takes effect only on a later Worker deploy.
 
-### Phase 1 — Room Backend
+### Phase 1 — Room Backend — ✅ Complete (2026-07-25)
 
 Goal: create, join, reconnect to, and expire a two-seat room without touching
 gameplay UI.
@@ -383,6 +383,36 @@ Acceptance gate:
 - a third client cannot join;
 - expired room storage is deleted;
 - leaderboard endpoints remain unchanged.
+
+Result:
+
+- added a dedicated SQLite-backed `MatchRoom` Durable Object, `MATCH_ROOM`
+  binding, and declarative `v2` Wrangler migration without changing the
+  existing `Leaderboard` binding;
+- implemented anonymous create/read/join routes, hashed host/guest capability
+  tokens, short-lived one-use socket tickets, and safe public snapshots;
+- implemented the version-1 room lifecycle across waiting, countdown, playing,
+  finished, forfeit, cancelled, rematch, disconnect grace, and expiry;
+- used hibernatable WebSockets with serialized seat/rate metadata, reconnect
+  replacement, ordered sequence validation, progress bounds, and alarms for
+  the nearest lifecycle deadline;
+- added explicit origin validation, KV-backed per-IP create/join limits, a
+  per-socket message limit, the `MULTIPLAYER_ENABLED` kill switch, and explicit
+  alarm/storage cleanup for the current compatibility date;
+- expanded the root suite to 29 passing tests covering code validation,
+  collisions, room capacity, authorization, ticket hashing, duplicate and
+  regressing messages, message bursts, results, cheating, disconnect grace,
+  rematches, reconciliation, and permanent cleanup;
+- passed a Wrangler bundle dry run and a real local integration test using two
+  WebSocket clients through create, join, ticket exchange, reconnect/seat
+  replacement, countdown, progress, finish, and result; the same test verified
+  that a one-use ticket cannot be replayed;
+- preserved the existing leaderboard validation suite and API behavior.
+
+No production Worker was deployed in this phase. No Cloudflare dashboard work
+is needed yet. When a shared online test is desired, the repository owner must
+authorize Wrangler (if the local session is not already logged in) and approve
+`npx wrangler deploy`; that deploy applies the `v2` Durable Object migration.
 
 ### Phase 2 — Challenge and Lobby UX
 

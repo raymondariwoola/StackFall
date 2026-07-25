@@ -17,6 +17,11 @@
 // each board kept as a JSON array trimmed to the top 50. The LEADERBOARD KV
 // namespace remains the soft rate-limit store and automatic board fallback.
 
+import { clientIp, rateLimit, intEnv } from './rate-limit.js';
+import { handleMatchRequest, isMatchPath } from './match-api.js';
+export { intEnv } from './rate-limit.js';
+export { MatchRoom } from './match-room.js';
+
 const KEEP = 50;              // entries stored per board
 const TOP = 20;               // entries returned to clients
 const RATE_WINDOW = 60;       // rate-limit window, seconds (KV TTL minimum is 60)
@@ -34,7 +39,7 @@ export default {
 
     try {
       if (url.pathname === '/' && request.method === 'GET') {
-        return json({ ok: true, service: 'stackfall-leaderboard', endpoints: ['/daily', '/leaderboard', '/score'] }, 200, cors);
+        return json({ ok: true, service: 'stackfall-backend', endpoints: ['/daily', '/leaderboard', '/score', '/matches'] }, 200, cors);
       }
 
       if (url.pathname === '/daily' && request.method === 'GET') {
@@ -78,6 +83,10 @@ export default {
 
       if (url.pathname === '/cheat' && request.method === 'POST') {
         return await handleCheat(request, env, cors);
+      }
+
+      if (isMatchPath(url.pathname)) {
+        return await handleMatchRequest(request, env, cors);
       }
 
       if (url.pathname === '/admin/boards' && request.method === 'GET') {
@@ -352,45 +361,12 @@ export class Leaderboard {
 }
 
 // ---------- abuse controls ----------
-function clientIp(request) {
-  return request.headers.get('CF-Connecting-IP') || request.headers.get('X-Forwarded-For') || '';
-}
-
-// Best-effort per-IP fixed-window limiter backed by a short-lived KV key.
-// KV is eventually consistent, so this is a soft ceiling, not a hard gate —
-// which is the right trade-off for a casual game's spam/brute-force defence.
-async function rateLimit(env, bucket, ip, limit, windowSec) {
-  if (!ip || !env.LEADERBOARD) return { ok: true };
-  // Bucket the key by window index so each window gets a FRESH key and a hard
-  // reset. The previous version reused one key and refreshed its TTL on every
-  // increment, which quietly turned a fixed window into a sliding one — an
-  // active player could stay throttled far longer than `windowSec`.
-  const nowSec = Math.floor(Date.now() / 1000);
-  const win = Math.floor(nowSec / windowSec);
-  const key = `rl:${bucket}:${ip}:${win}`;
-  let count = 0;
-  try { count = parseInt(await env.LEADERBOARD.get(key) || '0', 10) || 0; } catch (e) { /* fail open */ }
-  if (count >= limit) {
-    return { ok: false, retryAfter: windowSec - (nowSec % windowSec) };
-  }
-  // TTL only needs to outlive the window; KV enforces a 60s minimum.
-  try {
-    await env.LEADERBOARD.put(key, String(count + 1), { expirationTtl: Math.max(60, windowSec * 2) });
-  } catch (e) { /* fail open */ }
-  return { ok: true };
-}
-
 function tooMany(info, cors) {
   return json(
     { ok: false, error: 'rate_limited' },
     429,
     { ...cors, 'Retry-After': String((info && info.retryAfter) || RATE_WINDOW) },
   );
-}
-
-export function intEnv(v, fallback) {
-  const n = parseInt(v, 10);
-  return Number.isFinite(n) ? n : fallback;
 }
 
 // ---------- day-key validation ----------
@@ -465,7 +441,7 @@ async function sha256hex(str) {
 function corsHeaders(env, request) {
   const base = {
     'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
-    'Access-Control-Allow-Headers': 'Content-Type, X-Sig',
+    'Access-Control-Allow-Headers': 'Content-Type, X-Sig, Authorization',
     'Access-Control-Max-Age': '86400',
   };
   const allow = (env.ALLOW_ORIGIN || '*').trim();

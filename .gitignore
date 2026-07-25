@@ -1,6 +1,7 @@
 # Node / Cloudflare Worker tooling
 node_modules/
 .wrangler/
+.wrangler-dev.*.log
 .dev.vars
 
 # General
