@@ -317,6 +317,11 @@ function closeDuelLayer(){
   else clearModal();
 }
 
+function returnFromDuelError(){
+  if (history.state?.stackfallDuel) history.back();
+  else closeDuelLayer();
+}
+
 function putDuelInUrl(code){
   const url = buildChallengeUrl(location.href, code);
   history.replaceState({ ...(history.state || {}), stackfallDuel: true }, '', url);
@@ -643,11 +648,19 @@ multiplayer.on('result', (payload) => {
   showDuelResult(payload.room);
 });
 multiplayer.on('expired', () => {
-  if (duelOpen) showDuelError('room_not_found', 'Enter Another Code');
+  if (duelRound){
+    resetDuelToTitle();
+    showDuelError('room_not_found', 'Back to Title', returnFromDuelError);
+  } else if (duelOpen) showDuelError('room_not_found', 'Enter Another Code');
 });
 multiplayer.on('error', (payload) => {
   if (duelRound){
-    if (!['duplicate_sequence', 'not_playing'].includes(payload.code)) announce(`Duel update: ${duelErrorText(payload.code)}`);
+    if (payload.code === 'multiplayer_disabled'){
+      resetDuelToTitle();
+      showDuelError(payload.code, 'Back to Title', returnFromDuelError);
+    } else if (!['duplicate_sequence', 'not_playing'].includes(payload.code)) {
+      announce(`Duel update: ${duelErrorText(payload.code)}`);
+    }
   } else if (duelOpen) showDuelError(payload.code, payload.code === 'socket_replaced' ? 'Enter Another Code' : 'Try Again');
 });
 multiplayer.on('transport_error', ({ error }) => {

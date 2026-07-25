@@ -7,6 +7,47 @@ GitHub Pages/Worker deployment shape visible in this repository. This is a
 static code audit; production behavior, DNS, deployed Worker variables, KV
 contents, and real-device behavior were not directly inspected.
 
+## Multiplayer Phase 4 hardening and cost guardrails (2026-07-25)
+
+Phase 4 of `MULTIPLAYER_PLAN.md` is complete locally. The release gate now
+includes two real isolated Playwright browser contexts against local Wrangler,
+with the static app and `/matches` traffic on one development origin. The flow
+creates and joins a room, verifies the shared seed/difficulty and locked Duel
+controls, resolves a forfeit, starts a fresh-seed rematch, rotates the host
+viewport, and verifies the second result. A dedicated runner owns and cleans up
+both local servers on Windows and CI.
+
+Hardening added UTF-8 byte-bounded bodies, independent create/join/ticket/socket
+limits, response rate-limit metadata, anonymous telemetry, recurring heartbeat,
+stable structured errors, and an active-socket kill switch. Fault tests cover
+slow ticket completion, duplicate/out-of-order messages across a reconstructed
+room instance, message bursts, room expiry and `deleteAll()`, and disabled live
+sockets. The kill switch regression proves `/matches` fails closed while the
+leaderboard remains available.
+
+Privacy review found and removed two URL-secret paths. Admin routes now accept
+`X-Admin-Key` only. One-use WebSocket tickets moved from the URL query into the
+negotiated subprotocol header; Wrangler therefore logs only the room-code socket
+path. Custom logs are allowlisted to bounded event names, error types, buckets,
+and counters, with no names, IP addresses, capabilities, URLs, messages, or
+stacks.
+
+Validation evidence:
+
+- `npm test`: 54/54 syntax and behavior tests pass;
+- `npm run test:e2e`: 1/1 two-browser live Duel passes in about ten seconds;
+- Worker integration passes ticket replay rejection, socket replacement,
+  completion, rematch, and countdown forfeit over two real WebSockets;
+- real local logs show clean `/matches/:code/socket` upgrade paths with no
+  ticket query;
+- the existing hibernation and cleanup design is comfortably shaped for
+  family-and-friends free-tier use, but only production Metrics can confirm
+  hosted consumption.
+
+No deployment occurred. Two-phone WhatsApp/background-resume, deployed cleanup,
+observability, quota, and emergency-disable drills remain the production release
+checklist and require the owner's Cloudflare/GitHub access.
+
 ## Multiplayer Phase 3 live Duel gameplay (2026-07-25)
 
 Phase 3 of `MULTIPLAYER_PLAN.md` is complete locally. Both players now start a
@@ -767,9 +808,10 @@ the deployed binding is `LEADERBOARD`, as the deploy output confirms.)
 Resolution: two secret-gated admin routes (`ADMIN_KEY`, constant-time compared,
 403 when unset):
 
-- `GET /admin/boards?key=…&days=7` — lists live boards with entry counts and the
-  top entry, and reports which store is active (`durable-object` | `kv`).
-- `POST /admin/reset?key=…` — wipes every board back to zero: DO storage,
+- `GET /admin/boards?days=7` with `X-Admin-Key` — lists live boards with entry
+  counts and the top entry, and reports which store is active
+  (`durable-object` | `kv`).
+- `POST /admin/reset` with `X-Admin-Key` — wipes every board back to zero: DO storage,
   the KV fallback copies, the **legacy pre-split keys** (`board:all`,
   `board:day:<day>`), plus a `board:*` KV sweep. Rate-limit counters are
   deliberately preserved (they aren't scores).

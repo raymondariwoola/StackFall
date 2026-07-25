@@ -34,7 +34,8 @@ StackFall/
 │   └── leaderboard.js    # Worker client (set WORKER_URL here)
 ├── shared/               # versioned browser/Worker multiplayer contracts
 ├── tests/                # dependency-free Node test suite
-├── package.json          # one-command syntax + behavior validation
+├── e2e/                  # two-browser Playwright Duel coverage
+├── package.json          # unit and browser validation commands
 └── worker/               # Cloudflare Worker (boards, daily seed, Duel rooms)
     ├── src/index.js      # public router + leaderboard Durable Object
     ├── src/match-room.js # hibernating two-player room Durable Object
@@ -63,11 +64,23 @@ a locally-computed daily seed work with no backend at all.
 From the repository root:
 
 ```bash
+npm ci
 npm test
 ```
 
 This runs JavaScript syntax checks plus the game, run-context, Duel-contract,
-room-state, and Worker-validation tests. It installs no dependencies.
+room-state, hardening, and Worker-validation tests.
+
+The real two-browser suite also needs Chromium once:
+
+```bash
+npx playwright install chromium
+npm run test:e2e
+```
+
+That command owns both local servers, creates isolated host/guest browser
+contexts, and verifies create/join, synchronized play, forfeit, rematch, a new
+seed, mobile rotation, and result delivery. It shuts the servers down afterward.
 
 ### Run the real Worker integration test
 
@@ -93,15 +106,17 @@ starts a new-seed rematch, and verifies a countdown forfeit. It targets
 
 ### Try a live Duel locally
 
-Start the Worker as above, then serve the static game from the repository root:
+Start the Worker as above, then run the same-origin Duel development server from
+the repository root:
 
 ```bash
-python -m http.server 8137 --bind 127.0.0.1
+npm run dev:duel
 # open http://127.0.0.1:8137/
 ```
 
-On localhost only, the Duel client automatically uses
-`http://127.0.0.1:8788`; deployed pages continue to use the configured Worker.
+The development server serves the static game and proxies `/matches` plus the
+WebSocket upgrade to `http://127.0.0.1:8788`. Deployed pages continue to use the
+configured Worker directly.
 Choose **Challenge a Friend**, then open the generated link in another tab or
 choose **Join Duel** and enter its code. Each tab keeps only its own private seat
 capability in `sessionStorage`, so a refresh can reclaim that seat without an
@@ -219,7 +234,7 @@ curl https://stackfall-lb.YOURNAME.workers.dev/daily
 | GET    | `/matches/:code`                      | safe public room snapshot |
 | POST   | `/matches/:code/join`                 | claim the guest seat; returns guest capability |
 | POST   | `/matches/:code/socket-ticket`        | exchange a Bearer capability for a one-use ticket |
-| GET    | `/matches/:code/socket?ticket=…`      | origin-checked WebSocket upgrade |
+| GET    | `/matches/:code/socket`               | origin-checked WebSocket upgrade; one-use ticket is a subprotocol, not a URL |
 
 `POST /score` body: `{ name, score, day, ts }` with an `X-Sig` header (the client
 sets both automatically). The Worker sanitizes names, rejects implausible scores,
@@ -229,8 +244,52 @@ KV remains the rate-limit store and automatic leaderboard fallback.
 Multiplayer capabilities are bearer secrets and are never returned by the
 public room-state route. The browser client stores its own capability in
 `sessionStorage`, exchanges it for a 60-second one-use socket ticket, and puts
-only that ticket in the WebSocket URL. Room codes use eight human-safe
+that ticket in the WebSocket protocol header rather than a logged/shared URL.
+Room codes use eight human-safe
 characters displayed as `XXXX-XXXX`; the first guest claims the only open seat.
+
+### Duel operations and rollback
+
+Before a production release, run `npm test`, `npm run test:e2e`, and the Worker
+integration test above. Deploy from `worker/` with `npx wrangler deploy`; the
+committed migrations are additive: `v1` creates `Leaderboard` and `v2` creates
+`MatchRoom`. Do not remove or rename either class in a routine rollback.
+
+Emergency multiplayer disable (single-player and leaderboards stay available):
+
+1. Set `MULTIPLAYER_ENABLED = "0"` in `worker/wrangler.toml`.
+2. Run `cd worker` then `npx wrangler deploy`.
+3. Confirm `/` reports `multiplayer.enabled: false`, `/matches` returns
+   `multiplayer_disabled`, and `/leaderboard` still succeeds.
+4. Re-enable by restoring `"1"`, rerunning the validation gates, and deploying.
+
+For a code-only Worker regression, `npx wrangler rollback` selects the previous
+deployment. Cloudflare does not roll back bindings or Durable Object migrations,
+so use the kill switch instead when the target version crosses a class lifecycle
+change. Roll the static site back by reverting the responsible Git commit and
+letting GitHub Pages redeploy it.
+
+Inspect live events from `worker/` with `npx wrangler tail --format pretty`, or
+use **Workers & Pages → stackfall-lb → Observability**. Custom events contain
+only bounded event names, counters, error types, and rate-limit buckets—never
+player names, capabilities, IP addresses, request URLs, or stack traces. Admin
+credentials are accepted only through `X-Admin-Key`, never a query string:
+
+```bash
+curl -H "X-Admin-Key: YOUR_KEY" "https://YOUR_WORKER/admin/boards?days=7"
+curl -X POST -H "X-Admin-Key: YOUR_KEY" "https://YOUR_WORKER/admin/reset"
+```
+
+After deployment, check Cloudflare **Workers & Pages → Metrics** and Durable
+Objects usage after the first day and week. As of July 2026, Workers Free allows
+SQLite-backed Durable Objects and lists 100,000 Durable Object requests/day,
+13,000 GB-s/day, 5 million rows read/day, 100,000 rows written/day, and 5 GB
+stored data. Limits can change; verify the official
+[Durable Objects pricing](https://developers.cloudflare.com/durable-objects/platform/pricing/)
+before launch. StackFall hibernates idle sockets, sends progress only on
+landings plus a 15-second heartbeat, rate-limits every entry point, and deletes
+expired room storage, so family-and-friends use should remain far below those
+allowances. The dashboard—not this estimate—is the production acceptance gate.
 
 ---
 

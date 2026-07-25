@@ -164,7 +164,7 @@ Suggested routes:
 | `POST` | `/matches/:code/join` | Claim guest seat; return player token |
 | `GET` | `/matches/:code` | Read safe lobby state; never return tokens |
 | `POST` | `/matches/:code/socket-ticket` | Exchange player token for a short-lived one-use ticket |
-| `GET` | `/matches/:code/socket?ticket=…` | Upgrade to the room's WebSocket |
+| `GET` | `/matches/:code/socket` | Upgrade using the one-use ticket in a WebSocket subprotocol |
 
 The website should construct the share URL from its own `location` plus the room
 code. The Worker should not guess the site's public URL.
@@ -543,7 +543,7 @@ Normal and Hardcore starts, background/reconnect, forfeit, result, and rematch.
 That requires the owner's explicit deploy/push approval and is the only Phase 3
 acceptance item that cannot be completed purely in the local repository.
 
-### Phase 4 — Hardening and Cost Guardrails
+### Phase 4 — Hardening and Cost Guardrails — ✅ Complete locally (2026-07-25)
 
 Goal: make the MVP safe to leave online unattended.
 
@@ -564,6 +564,57 @@ Acceptance gate:
 - a failed multiplayer deploy can be disabled without affecting local play or
   leaderboards;
 - observed test usage is comfortably inside the free tier.
+
+Phase 4 result:
+
+- added a Playwright release gate with two isolated mobile-sized browser
+  contexts and a deterministic same-origin local proxy. It covers link join,
+  synchronized seed/difficulty, active-Duel control lockout, forfeit, result,
+  two-sided rematch with a fresh seed, and portrait/landscape HUD bounds;
+- added a cross-platform E2E runner that starts and stops Wrangler plus the
+  proxy reliably on Windows and CI. Browser coverage found and fixed a native
+  `fetch` receiver bug that the mocked client tests could not reproduce;
+- hardened HTTP bodies by UTF-8 byte length, added an independent ticket limit,
+  exposed anonymous limits/kill-switch state on health, returned rate-limit
+  headers, and emitted bounded anonymous rate/error telemetry;
+- made the live kill switch close existing sockets with a structured
+  `multiplayer_disabled` error. Client heartbeat/retry timers stop cleanly, the
+  active Duel returns to title, and a regression test proves leaderboard reads
+  stay available while room creation is disabled;
+- kept capabilities in `sessionStorage`, removed admin secrets from query
+  strings, and moved one-use socket tickets from URLs into the negotiated
+  WebSocket subprotocol header. Shared invite URLs contain only the room code;
+  custom logs exclude names, IPs, tokens, URLs, messages, and stacks;
+- verified duplicate/out-of-order sequences across a new `MatchRoom` instance,
+  slow ticket completion after disconnect, hibernation-style restoration,
+  expired-room `deleteAll()`, message bursts, disabled active sockets, and
+  mobile rotation. Duel time is epoch/server based; existing daily-key tests
+  retain UTC-boundary coverage;
+- documented local E2E, deployment, additive migrations, emergency disable,
+  Worker/static rollback, privacy-safe log inspection, and production quota
+  checks in `README.md`.
+
+Validation evidence:
+
+- root `npm test`: 54/54 syntax and behavior tests pass after the final kill
+  switch isolation test;
+- `npm run test:e2e`: 1/1 real two-browser Duel passes against local Wrangler
+  in about ten seconds, including real HTTP and WebSocket upgrades;
+- Worker `npm run test:integration`: passes completion, ticket replay rejection,
+  socket replacement, fresh-seed rematch, and countdown forfeit over two real
+  WebSockets using the header-only ticket handshake;
+- the WebSocket URLs printed by Wrangler contain only
+  `/matches/XXXX-XXXX/socket`; the one-use ticket no longer appears in the URL;
+- local E2E traffic is tiny relative to the July 2026 Workers Free Durable
+  Object allowances. Production Metrics still need to be observed after an
+  approved deployment because local testing cannot prove hosted usage.
+
+No Worker or site deployment occurred. The remaining production acceptance is
+operational rather than code work: deploy both pieces, open a WhatsApp invite on
+two physical phones, background/resume both devices, inspect anonymized logs and
+Metrics, confirm room cleanup after its deadline, and exercise the kill switch.
+Those steps require the owner's Cloudflare/GitHub access and explicit deploy
+approval.
 
 ### Phase 5 — Optional “Beat My Tower” Challenge
 

@@ -51,6 +51,7 @@ SCORE_RATE_LIMIT = "30"
 CHEAT_RATE_LIMIT = "5"
 MATCH_CREATE_RATE_LIMIT = "10"
 MATCH_JOIN_RATE_LIMIT = "30"
+MATCH_TICKET_RATE_LIMIT = "60"
 MATCH_MESSAGE_RATE_LIMIT = "60"
 MULTIPLAYER_ENABLED = "1"
 # How many past days a daily board (`/leaderboard?daily=1&day=YYYY-MM-DD`) may be
@@ -75,6 +76,6 @@ BLOCK_CHEATED = "1"
 #   npx wrangler secret put ADMIN_KEY
 #
 #   # inspect the live boards
-#   curl "https://stackfall-lb.raymondariwoola.workers.dev/admin/boards?key=YOUR_KEY"
+#   curl -H "X-Admin-Key: YOUR_KEY" "https://stackfall-lb.raymondariwoola.workers.dev/admin/boards"
 #   # flush every board back to zero (also purges legacy pre-DO KV keys)
-#   curl -X POST "https://stackfall-lb.raymondariwoola.workers.dev/admin/reset?key=YOUR_KEY"
+#   curl -X POST -H "X-Admin-Key: YOUR_KEY" "https://stackfall-lb.raymondariwoola.workers.dev/admin/reset"

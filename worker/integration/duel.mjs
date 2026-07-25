@@ -62,7 +62,9 @@ class SocketInbox {
 
 function openSocket(code, ticket){
   return new Promise((resolve, reject) => {
-    const socket = new WebSocket(`${WS_BASE}/matches/${code}/socket?ticket=${ticket}`, {
+    const socket = new WebSocket(`${WS_BASE}/matches/${code}/socket`, [
+      'stackfall.v1', `stackfall-ticket.${ticket}`,
+    ], {
       origin: ORIGIN,
       handshakeTimeout: TIMEOUT_MS,
     });
@@ -73,7 +75,9 @@ function openSocket(code, ticket){
 
 function expectRejectedUpgrade(code, ticket){
   return new Promise((resolve, reject) => {
-    const socket = new WebSocket(`${WS_BASE}/matches/${code}/socket?ticket=${ticket}`, {
+    const socket = new WebSocket(`${WS_BASE}/matches/${code}/socket`, [
+      'stackfall.v1', `stackfall-ticket.${ticket}`,
+    ], {
       origin: ORIGIN,
       handshakeTimeout: TIMEOUT_MS,
     });

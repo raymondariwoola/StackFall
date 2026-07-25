@@ -3,6 +3,8 @@
 // will connect it to HTTP and WebSocket routes.
 
 export const DUEL_PROTOCOL_VERSION = 1;
+export const DUEL_SOCKET_PROTOCOL = `stackfall.v${DUEL_PROTOCOL_VERSION}`;
+export const DUEL_TICKET_PROTOCOL_PREFIX = 'stackfall-ticket.';
 
 export const ROOM_STATES = Object.freeze({
   WAITING: 'waiting',
@@ -41,6 +43,19 @@ export const DUEL_LIMITS = Object.freeze({
   MAX_SEQUENCE: 1_000_000,
   ROOM_CODE_LENGTH: 8,
 });
+
+export function duelTicketProtocol(ticket){
+  return DUEL_TICKET_PROTOCOL_PREFIX + String(ticket || '');
+}
+
+export function ticketFromSocketProtocols(value){
+  for (const protocol of String(value || '').split(',').map((part) => part.trim())){
+    if (!protocol.startsWith(DUEL_TICKET_PROTOCOL_PREFIX)) continue;
+    const ticket = protocol.slice(DUEL_TICKET_PROTOCOL_PREFIX.length);
+    if (/^[a-f0-9]{48}$/.test(ticket)) return ticket;
+  }
+  return '';
+}
 
 const ROOM_CODE_RE = /^[23456789ABCDEFGHJKMNPQRSTUVWXYZ]{8}$/;
 const TRANSITIONS = Object.freeze({

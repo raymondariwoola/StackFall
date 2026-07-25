@@ -138,4 +138,32 @@ test('match create rate limit uses the shared KV limiter', async () => {
   }), env, cors);
   assert.equal(second.status, 429);
   assert.equal((await second.json()).error, 'rate_limited');
+  assert.equal(second.headers.get('X-RateLimit-Limit'), '1');
+  assert.equal(second.headers.get('X-RateLimit-Remaining'), '0');
+});
+
+test('match bodies are byte-bounded and socket tickets have a separate limiter', async () => {
+  const env = makeEnv({ MATCH_TICKET_RATE_LIMIT: '1' });
+  const oversized = new Request('https://worker.example/matches', {
+    method: 'POST',
+    headers: { Origin: 'http://127.0.0.1:8137', 'Content-Type': 'application/json' },
+    body: `"${'é'.repeat(600)}"`,
+  });
+  const rejected = await handleMatchRequest(oversized, env, cors);
+  assert.equal(rejected.status, 413);
+  assert.equal((await rejected.json()).error, 'too_large');
+
+  const created = await handleMatchRequest(request('/matches', {
+    method: 'POST', body: { name: 'Host', difficulty: 'normal' },
+  }), env, cors);
+  const { code, hostToken } = await created.json();
+  const first = await handleMatchRequest(request(`/matches/${code}/socket-ticket`, {
+    method: 'POST', token: hostToken, ip: '192.0.2.9',
+  }), env, cors);
+  assert.equal(first.status, 201);
+  const second = await handleMatchRequest(request(`/matches/${code}/socket-ticket`, {
+    method: 'POST', token: hostToken, ip: '192.0.2.9',
+  }), env, cors);
+  assert.equal(second.status, 429);
+  assert.equal(second.headers.get('X-RateLimit-Limit'), '1');
 });

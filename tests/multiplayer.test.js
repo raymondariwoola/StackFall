@@ -19,8 +19,9 @@ class MemoryStorage {
 
 class FakeSocket {
   static instances = [];
-  constructor(url){
+  constructor(url, protocols = []){
     this.url = url;
+    this.protocols = protocols;
     this.readyState = 0;
     this.listeners = new Map();
     this.sent = [];
@@ -84,9 +85,36 @@ test('challenge URLs parse normalized codes and strip unrelated sharing state', 
     'http://127.0.0.1:8788',
   );
   assert.equal(
+    resolveMultiplayerWorkerUrl('https://worker.example', {
+      hostname: '127.0.0.1', protocol: 'http:', port: '8137', origin: 'http://127.0.0.1:8137',
+    }),
+    'http://127.0.0.1:8137',
+  );
+  assert.equal(
     resolveMultiplayerWorkerUrl('https://worker.example/', { hostname: 'game.example', protocol: 'https:' }),
     'https://worker.example',
   );
+});
+
+test('browser-style fetch implementations retain their required global receiver', async () => {
+  let receiver;
+  async function receiverSensitiveFetch(){
+    receiver = this;
+    if (receiver !== globalThis) throw new TypeError('Illegal invocation');
+    return response(201, {
+      ok: true,
+      code: '7KMX-R4QP',
+      hostToken: 'a'.repeat(48),
+      room: { code: '7KMX-R4QP', state: 'waiting' },
+    });
+  }
+  const client = new MultiplayerClient({
+    baseUrl: 'https://worker.example',
+    fetchImpl: receiverSensitiveFetch,
+    sessionStore: new MemoryStorage(),
+  });
+  await client.create({ name: 'Host', difficulty: 'normal' });
+  assert.equal(receiver, globalThis);
 });
 
 test('create and join keep bearer capabilities in session storage only', async () => {
@@ -102,13 +130,15 @@ test('create and join keep bearer capabilities in session storage only', async (
   assert.equal(client.session(joined.session.code).token, 'b'.repeat(48));
 });
 
-test('connect exchanges the capability for a URL ticket and sequences messages', async () => {
+test('connect exchanges the capability for a header-only ticket and sequences messages', async () => {
   FakeSocket.instances.length = 0;
   const { client, requests } = harness();
   await client.create({ name: 'Host', difficulty: 'normal' });
   const connecting = client.connect('7KMX-R4QP');
   const socket = await nextSocket();
-  assert.ok(socket.url.startsWith('wss://worker.example/matches/7KMX-R4QP/socket?ticket='));
+  assert.equal(socket.url, 'wss://worker.example/matches/7KMX-R4QP/socket');
+  assert.equal(socket.url.includes('ticket'), false);
+  assert.deepEqual(socket.protocols, ['stackfall.v1', `stackfall-ticket.${'c'.repeat(48)}`]);
   assert.equal(socket.url.includes('a'.repeat(48)), false);
   assert.equal(requests.at(-1).options.headers.Authorization, `Bearer ${'a'.repeat(48)}`);
   socket.emit('open');
@@ -175,4 +205,47 @@ test('API failures become stable multiplayer error codes', async () => {
     client.join({ code: '7KMX-R4QP', name: 'Guest' }),
     (error) => error instanceof MultiplayerError && error.code === 'room_full' && error.status === 409,
   );
+});
+
+test('slow ticket responses cannot resurrect a manually closed connection', async () => {
+  FakeSocket.instances.length = 0;
+  let releaseTicket;
+  const gate = new Promise((resolve) => { releaseTicket = resolve; });
+  const { client } = harness();
+  await client.create({ name: 'Host', difficulty: 'normal' });
+  client.fetchImpl = async (url) => {
+    if (url.endsWith('/socket-ticket')){ await gate; return response(201, { ok: true, ticket: 'c'.repeat(48) }); }
+    throw new Error('unexpected request');
+  };
+  const connecting = client.connect();
+  client.disconnect();
+  releaseTicket();
+  assert.equal(await connecting, null);
+  assert.equal(FakeSocket.instances.length, 0);
+  assert.equal(client.connection, 'idle');
+});
+
+test('heartbeat keepalive is sequenced and disabled sockets do not reconnect', async () => {
+  FakeSocket.instances.length = 0;
+  const timers = [];
+  const { client } = harness();
+  client.heartbeatMs = 10;
+  client.setTimer = (callback) => { timers.push(callback); return timers.length; };
+  client.clearTimer = () => {};
+  await client.create({ name: 'Host', difficulty: 'normal' });
+  const connecting = client.connect();
+  const socket = await nextSocket();
+  socket.emit('open');
+  await connecting;
+  assert.equal(timers.length, 1);
+  timers[0]();
+  assert.equal(socket.sent[0].type, 'heartbeat');
+  assert.equal(socket.sent[0].seq, 0);
+
+  socket.emit('message', { data: JSON.stringify({
+    v: 1, type: 'error', payload: { code: 'multiplayer_disabled' },
+  }) });
+  socket.emit('close', { code: 4003, reason: 'multiplayer disabled' });
+  assert.equal(client.connection, 'disabled');
+  assert.equal(FakeSocket.instances.length, 1);
 });

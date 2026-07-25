@@ -5,6 +5,11 @@
   "type": "module",
   "description": "StackFall static game and automated validation",
   "scripts": {
-    "test": "node scripts/check-syntax.mjs && node --test"
+    "test": "node scripts/check-syntax.mjs && node --test",
+    "dev:duel": "node scripts/duel-dev-server.mjs",
+    "test:e2e": "node scripts/run-duel-e2e.mjs"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.62.0"
   }
 }

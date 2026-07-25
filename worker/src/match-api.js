@@ -1,4 +1,5 @@
 import {
+  ticketFromSocketProtocols,
   formatRoomCode,
   isValidRoomCode,
   normalizeRoomCode,
@@ -27,13 +28,20 @@ function tooMany(info, cors){
   return json(
     { ok: false, error: 'rate_limited' },
     429,
-    { ...cors, 'Retry-After': String((info && info.retryAfter) || RATE_WINDOW_SECONDS) },
+    {
+      ...cors,
+      'Retry-After': String((info && info.retryAfter) || RATE_WINDOW_SECONDS),
+      'X-RateLimit-Limit': String((info && info.limit) || 0),
+      'X-RateLimit-Remaining': String((info && info.remaining) || 0),
+    },
   );
 }
 
 async function readBody(request){
   const raw = await request.text();
-  if (raw.length > MAX_MATCH_BODY_BYTES) return { ok: false, error: 'too_large', status: 413 };
+  if (new TextEncoder().encode(raw).byteLength > MAX_MATCH_BODY_BYTES) {
+    return { ok: false, error: 'too_large', status: 413 };
+  }
   try {
     const value = JSON.parse(raw);
     return { ok: true, value };
@@ -167,6 +175,10 @@ export async function handleMatchRequest(request, env, cors){
 
   if (route.action === 'socket-ticket'){
     if (request.method !== 'POST') return json({ ok: false, error: 'method_not_allowed' }, 405, cors);
+    const limited = await rateLimit(
+      env, 'match-ticket', clientIp(request), intEnv(env.MATCH_TICKET_RATE_LIMIT, 60), RATE_WINDOW_SECONDS,
+    );
+    if (!limited.ok) return tooMany(limited, cors);
     const authorization = request.headers.get('Authorization') || '';
     const match = /^Bearer ([a-f0-9]{48})$/.exec(authorization);
     if (!match) return json({ ok: false, error: 'unauthorized' }, 401, cors);
@@ -186,10 +198,11 @@ export async function handleMatchRequest(request, env, cors){
     if ((request.headers.get('Upgrade') || '').toLowerCase() !== 'websocket') {
       return json({ ok: false, error: 'upgrade_required' }, 426, cors);
     }
-    const ticket = url.searchParams.get('ticket') || '';
-    if (!/^[a-f0-9]{48}$/.test(ticket)) return json({ ok: false, error: 'invalid_ticket' }, 401, cors);
-    const internalUrl = `https://match.internal/socket?ticket=${encodeURIComponent(ticket)}`;
-    return stub.fetch(new Request(internalUrl, { method: 'GET', headers: request.headers }));
+    const ticket = ticketFromSocketProtocols(request.headers.get('Sec-WebSocket-Protocol'));
+    if (!ticket) return json({ ok: false, error: 'invalid_ticket' }, 401, cors);
+    return stub.fetch(new Request('https://match.internal/socket', {
+      method: 'GET', headers: request.headers,
+    }));
   }
 
   return json({ ok: false, error: 'not_found' }, 404, cors);

@@ -194,6 +194,39 @@ test('socket message bursts are bounded per hibernation attachment', async () =>
   assert.equal(host.sent.at(-1).type, 'presence');
 });
 
+test('out-of-order messages stay rejected across a hibernation-style class restart', async () => {
+  const harness = await setupRoom();
+  await joinGuest(harness);
+  const host = new FakeSocket('host');
+  const guest = new FakeSocket('guest');
+  harness.state.sockets.push(host, guest);
+  await readyAndStart(harness, host, guest);
+
+  await harness.match.webSocketMessage(host, envelope('progress', 3, progress()));
+  const restarted = new MatchRoom(harness.state, harness.env);
+  await restarted.webSocketMessage(host, envelope('progress', 2, progress({ score: 4, floors: 2 })));
+  assert.equal(host.sent.at(-1).payload.code, 'duplicate_sequence');
+  const room = await harness.state.storage.get(ROOM_STORAGE_KEY);
+  assert.equal(room.seats.host.progress.floors, 1);
+
+  await restarted.webSocketMessage(guest, envelope('progress', 1, progress({ score: 3 })));
+  assert.equal((await harness.state.storage.get(ROOM_STORAGE_KEY)).seats.guest.score, undefined);
+  assert.equal((await harness.state.storage.get(ROOM_STORAGE_KEY)).seats.guest.progress.score, 3);
+});
+
+test('active sockets honor the multiplayer kill switch without exposing room data', async () => {
+  const harness = await setupRoom();
+  const host = new FakeSocket('host');
+  harness.state.sockets.push(host);
+  harness.env.MULTIPLAYER_ENABLED = '0';
+  await harness.match.webSocketMessage(host, envelope('heartbeat', 0));
+  assert.deepEqual(host.sent.at(-1), {
+    v: DUEL_PROTOCOL_VERSION, type: 'error', payload: { code: 'multiplayer_disabled' },
+  });
+  assert.deepEqual(host.closed, { code: 4003, reason: 'multiplayer disabled' });
+  assert.equal(JSON.stringify(host.sent).includes('Host'), false);
+});
+
 test('two finishes produce a deterministic result and two votes start a fresh round', async () => {
   const harness = await setupRoom();
   await joinGuest(harness);

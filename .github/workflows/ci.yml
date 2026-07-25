@@ -20,3 +20,23 @@ jobs:
           node-version: 22
       - name: Run syntax and behavior tests
         run: npm test
+
+  duel-e2e:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - name: Install client test dependencies
+        run: npm ci
+      - name: Install Worker dependencies
+        run: npm ci --prefix worker
+      - name: Install Playwright Chromium
+        run: npx playwright install --with-deps chromium
+      - name: Run two-player Duel E2E
+        run: npm run test:e2e

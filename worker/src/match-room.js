@@ -1,10 +1,13 @@
 import {
   DUEL_LIMITS,
   DUEL_PROTOCOL_VERSION,
+  DUEL_SOCKET_PROTOCOL,
   ROOM_STATES,
   transitionRoom,
   validateClientEnvelope,
+  ticketFromSocketProtocols,
 } from '../../shared/duel-protocol.js';
+import { safeErrorEvent } from './safe-log.js';
 
 export const ROOM_STORAGE_KEY = 'room';
 export const TICKET_PREFIX = 'ticket:';
@@ -339,7 +342,7 @@ export class MatchRoom {
       if ((request.headers.get('Upgrade') || '').toLowerCase() !== 'websocket') {
         return json({ ok: false, error: 'upgrade_required' }, 426);
       }
-      const ticket = url.searchParams.get('ticket') || '';
+      const ticket = ticketFromSocketProtocols(request.headers.get('Sec-WebSocket-Protocol'));
       const ticketHash = await sha256hex(ticket);
       const stored = await this.state.storage.get(TICKET_PREFIX + ticketHash);
       if (!stored || stored.expiresAt <= now) {
@@ -376,7 +379,11 @@ export class MatchRoom {
       await this._save(room);
       await this._broadcast('presence', { room: publicRoom(room) });
       server.send(JSON.stringify(this._message('snapshot', { room: publicRoom(room, seat.id) })));
-      return new Response(null, { status: 101, webSocket: client });
+      return new Response(null, {
+        status: 101,
+        webSocket: client,
+        headers: { 'Sec-WebSocket-Protocol': DUEL_SOCKET_PROTOCOL },
+      });
     }
 
     return json({ ok: false, error: 'not_found' }, 404);
@@ -384,6 +391,11 @@ export class MatchRoom {
 
   async webSocketMessage(ws, raw){
     try {
+      if ((this.env.MULTIPLAYER_ENABLED || '1') === '0'){
+        this._sendError(ws, 'multiplayer_disabled');
+        try { ws.close(4003, 'multiplayer disabled'); } catch (e) { /* already closed */ }
+        return;
+      }
       if (typeof raw !== 'string' || new TextEncoder().encode(raw).byteLength > DUEL_LIMITS.MAX_MESSAGE_BYTES) {
         return this._sendError(ws, 'message_too_large');
       }
@@ -504,7 +516,7 @@ export class MatchRoom {
         await this._broadcast(room.result ? 'result' : 'presence', { room: publicRoom(room) });
       }
     } catch (error){
-      console.error('match websocket error:', error && error.stack || error);
+      console.error('stackfall_error', safeErrorEvent('match_message_failed', error));
       this._sendError(ws, 'server_error');
     }
   }
@@ -532,7 +544,7 @@ export class MatchRoom {
   }
 
   async webSocketError(ws, error){
-    console.error('match socket transport error:', error);
+    console.error('stackfall_error', safeErrorEvent('match_transport_failed', error));
     await this.webSocketClose(ws, 1011, 'socket error', false);
   }
 

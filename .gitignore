@@ -1,16 +1,22 @@
 # Node / Cloudflare Worker tooling
 node_modules/
 .wrangler/
+.wrangler-config/
 .wrangler-dev.*.log
 .dev.vars
-
+playwright-report/
+test-results/
+blob-report/
+.tmp-phase4-*.log
+*.log
 # General
 .DS_Store
 .localized
 __MACOSX/
 .AppleDouble
 .LSOverride
-Icon[]
+Icon[
+]
 
 # Resource forks
 ._*
@@ -31,7 +37,8 @@ Icon[]
 .file
 .disk_label*
 lost+found
-.HFS+ Private Directory Data[]
+.HFS+ Private Directory Data[
+]
 
 # Directories potentially created on remote AFP share
 .AppleDB

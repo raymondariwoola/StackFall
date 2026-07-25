@@ -19,6 +19,8 @@
 
 import { clientIp, rateLimit, intEnv } from './rate-limit.js';
 import { handleMatchRequest, isMatchPath } from './match-api.js';
+import { DUEL_LIMITS, DUEL_PROTOCOL_VERSION } from '../../shared/duel-protocol.js';
+import { safeErrorEvent } from './safe-log.js';
 export { intEnv } from './rate-limit.js';
 export { MatchRoom } from './match-room.js';
 
@@ -39,7 +41,20 @@ export default {
 
     try {
       if (url.pathname === '/' && request.method === 'GET') {
-        return json({ ok: true, service: 'stackfall-backend', endpoints: ['/daily', '/leaderboard', '/score', '/matches'] }, 200, cors);
+        return json({
+          ok: true,
+          service: 'stackfall-backend',
+          endpoints: ['/daily', '/leaderboard', '/score', '/matches'],
+          multiplayer: {
+            enabled: (env.MULTIPLAYER_ENABLED || '1') !== '0',
+            protocol: DUEL_PROTOCOL_VERSION,
+            maxMessageBytes: DUEL_LIMITS.MAX_MESSAGE_BYTES,
+            createPerMinute: intEnv(env.MATCH_CREATE_RATE_LIMIT, 10),
+            joinPerMinute: intEnv(env.MATCH_JOIN_RATE_LIMIT, 30),
+            ticketsPerMinute: intEnv(env.MATCH_TICKET_RATE_LIMIT, 60),
+            messagesPerTenSeconds: intEnv(env.MATCH_MESSAGE_RATE_LIMIT, 60),
+          },
+        }, 200, cors);
       }
 
       if (url.pathname === '/daily' && request.method === 'GET') {
@@ -100,7 +115,7 @@ export default {
     } catch (err) {
       // Log the detail server-side; return a generic code so implementation,
       // binding, or platform details never leak to callers.
-      console.error('stackfall worker error:', err && err.stack || err);
+      console.error('stackfall_error', safeErrorEvent('worker_request_failed', err));
       return json({ ok: false, error: 'server_error' }, 500, cors);
     }
   },
@@ -116,7 +131,7 @@ async function handleScore(request, env, cors) {
   const raw = await request.text();
 
   // Cap the body: submissions are tiny, so anything large is abuse or malformed.
-  if (raw.length > MAX_BODY_BYTES) {
+  if (new TextEncoder().encode(raw).byteLength > MAX_BODY_BYTES) {
     return json({ ok: false, error: 'too_large' }, 413, cors);
   }
 
@@ -193,7 +208,8 @@ async function handleCheat(request, env, cors) {
 function adminOk(request, env) {
   const secret = env.ADMIN_KEY || '';
   if (!secret) return false;
-  const given = request.headers.get('X-Admin-Key') || new URL(request.url).searchParams.get('key') || '';
+  // Keep credentials out of URLs, browser history, proxy logs, and referrers.
+  const given = request.headers.get('X-Admin-Key') || '';
   return timingSafeEqual(given, secret);
 }
 
@@ -365,7 +381,12 @@ function tooMany(info, cors) {
   return json(
     { ok: false, error: 'rate_limited' },
     429,
-    { ...cors, 'Retry-After': String((info && info.retryAfter) || RATE_WINDOW) },
+    {
+      ...cors,
+      'Retry-After': String((info && info.retryAfter) || RATE_WINDOW),
+      'X-RateLimit-Limit': String((info && info.limit) || 0),
+      'X-RateLimit-Remaining': String((info && info.remaining) || 0),
+    },
   );
 }
 

@@ -1,4 +1,6 @@
 import {
+  DUEL_SOCKET_PROTOCOL,
+  duelTicketProtocol,
   DUEL_PROTOCOL_VERSION,
   SERVER_MESSAGE_TYPES,
   cleanDuelName,
@@ -63,15 +65,17 @@ export function withoutChallengeUrl(value){
 export function resolveMultiplayerWorkerUrl(defaultUrl, locationLike = globalThis.location){
   const hostname = locationLike && locationLike.hostname;
   if (hostname === '127.0.0.1' || hostname === 'localhost' || hostname === '::1'){
+    // The dedicated Duel dev server proxies /matches on the page's own origin,
+    // which avoids browser/extension cross-port policies during E2E testing.
+    if (String(locationLike.port || '') === '8137') return String(locationLike.origin || '').replace(/\/$/, '');
     return `${locationLike.protocol || 'http:'}//${hostname === '::1' ? '[::1]' : hostname}:8788`;
   }
   return String(defaultUrl || '').replace(/\/$/, '');
 }
 
-function socketUrl(baseUrl, code, ticket){
+function socketUrl(baseUrl, code){
   const url = new URL(`${baseUrl}/matches/${encodeURIComponent(code)}/socket`);
   url.protocol = url.protocol === 'https:' ? 'wss:' : 'ws:';
-  url.searchParams.set('ticket', ticket);
   return url.toString();
 }
 
@@ -83,9 +87,13 @@ export class MultiplayerClient {
     sessionStore = globalThis.sessionStorage,
     setTimer = null,
     clearTimer = null,
+    heartbeatMs = 15_000,
   } = {}){
     this.baseUrl = String(baseUrl || '').replace(/\/$/, '');
-    this.fetchImpl = fetchImpl;
+    // Browser-native fetch is receiver-sensitive in some engines. Bind it to
+    // the global object so calling it through this client cannot become an
+    // "Illegal invocation" before the request leaves the page.
+    this.fetchImpl = fetchImpl ? fetchImpl.bind(globalThis) : null;
     this.WebSocketImpl = WebSocketImpl;
     this.sessionStore = sessionStore;
     // Window timer methods throw "Illegal invocation" in some browsers when
@@ -93,6 +101,7 @@ export class MultiplayerClient {
     // the native function reference.
     this.setTimer = setTimer || ((callback, delay) => globalThis.setTimeout(callback, delay));
     this.clearTimer = clearTimer || ((timer) => globalThis.clearTimeout(timer));
+    this.heartbeatMs = Math.max(0, Number(heartbeatMs) || 0);
     this.listeners = new Map();
     this.memorySessions = new Map();
     this.socket = null;
@@ -101,6 +110,7 @@ export class MultiplayerClient {
     this.connection = 'idle';
     this.reconnectAttempt = 0;
     this.reconnectTimer = null;
+    this.heartbeatTimer = null;
     this.generation = 0;
     this.manualClose = false;
   }
@@ -237,7 +247,10 @@ export class MultiplayerClient {
     });
     if (generation !== this.generation) return null;
 
-    const socket = new this.WebSocketImpl(socketUrl(this.baseUrl, session.code, ticketData.ticket));
+    const socket = new this.WebSocketImpl(socketUrl(this.baseUrl, session.code), [
+      DUEL_SOCKET_PROTOCOL,
+      duelTicketProtocol(ticketData.ticket),
+    ]);
     this.socket = socket;
     return await new Promise((resolve, reject) => {
       let settled = false;
@@ -245,12 +258,14 @@ export class MultiplayerClient {
         if (socket !== this.socket || generation !== this.generation) return;
         settled = true;
         this.reconnectAttempt = 0;
+        this._scheduleHeartbeat();
         this._setConnection('connected');
         resolve(socket);
       }, { once: true });
       socket.addEventListener('message', (event) => this._handleMessage(socket, event.data));
       socket.addEventListener('close', (event) => {
         if (socket !== this.socket || generation !== this.generation) return;
+        this._stopHeartbeat();
         this.socket = null;
         this._emit('close', { code: event.code, reason: event.reason || '' });
         if (!settled){
@@ -280,6 +295,11 @@ export class MultiplayerClient {
     if (message.type === 'error' && message.payload.code === 'socket_replaced'){
       this.manualClose = true;
       this._setConnection('replaced');
+    }
+    if (message.type === 'error' && message.payload.code === 'multiplayer_disabled'){
+      this.manualClose = true;
+      this._stopHeartbeat();
+      this._setConnection('disabled');
     }
     if (message.type === 'expired'){
       this.clearSession(this.code);
@@ -344,6 +364,7 @@ export class MultiplayerClient {
     this.manualClose = true;
     this.generation++;
     this._cancelReconnect();
+    this._stopHeartbeat();
     const socket = this.socket;
     this.socket = null;
     try { if (socket && socket.readyState < 2) socket.close(1000, 'client closed'); } catch (e) { /* closed */ }
@@ -374,5 +395,24 @@ export class MultiplayerClient {
   _cancelReconnect(){
     if (this.reconnectTimer != null) this.clearTimer(this.reconnectTimer);
     this.reconnectTimer = null;
+  }
+
+  _scheduleHeartbeat(){
+    this._stopHeartbeat();
+    if (!this.heartbeatMs || this.manualClose) return;
+    this.heartbeatTimer = this.setTimer(() => {
+      this.heartbeatTimer = null;
+      if (this.socket && this.socket.readyState === 1){
+        try { this.send('heartbeat'); } catch (e) { /* reconnect owns recovery */ }
+      }
+      if (!this.manualClose) this._scheduleHeartbeat();
+    }, this.heartbeatMs);
+    // Node tests should not be held open by a browser-only keepalive timer.
+    this.heartbeatTimer && this.heartbeatTimer.unref?.();
+  }
+
+  _stopHeartbeat(){
+    if (this.heartbeatTimer != null) this.clearTimer(this.heartbeatTimer);
+    this.heartbeatTimer = null;
   }
 }
