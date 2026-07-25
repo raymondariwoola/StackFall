@@ -12,6 +12,8 @@ export class UI {
     this.overlay = document.getElementById('overlay');
     this.panel = document.querySelector('#overlay .panel');
     this.startBtn = document.getElementById('start-btn');
+    this.challengeBtn = document.getElementById('challenge-btn');
+    this.joinDuelBtn = document.getElementById('join-duel-btn');
     this.modeBtn = document.getElementById('mode-btn');
     this.shareBtn = document.getElementById('share-btn');
     this.soundBtn = document.getElementById('sound-btn');
@@ -466,6 +468,7 @@ export class UI {
     const blocked = this.nameBlocked();
     // Don't fight the Daily "Loading…" disable — setStarting re-applies us after.
     if (this._startLabel == null) this.startBtn.disabled = blocked;
+    this.challengeBtn.disabled = !Storage.name().trim();
     this.nameInput.classList.toggle('needed', blocked);
     this.nameHint.textContent = blocked ? 'Enter a name to play — or switch Mode to Practice.' : '';
   }

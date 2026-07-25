@@ -7,6 +7,36 @@ GitHub Pages/Worker deployment shape visible in this repository. This is a
 static code audit; production behavior, DNS, deployed Worker variables, KV
 contents, and real-device behavior were not directly inspected.
 
+## Multiplayer Phase 2 challenge and lobby UX (2026-07-25)
+
+Phase 2 of `MULTIPLAYER_PLAN.md` is complete locally. The title screen now has
+separate challenge and join actions backed by a responsive Duel overlay. A host
+creates a two-seat room from the saved name and selected difficulty; a guest can
+join from a `?duel=XXXX-XXXX` link or by entering the code and a temporary name.
+No account, contact permission, email, or phone number is requested.
+
+`js/multiplayer.js` keeps bearer capabilities in per-tab `sessionStorage`,
+exchanges them for one-use WebSocket tickets, sequences messages, and recovers
+the same seat after refresh. `js/duel-ui.js` renders presence, readiness,
+sharing, connection state, and explicit invalid/expired/full/cancelled/offline
+outcomes. Browser history gives Back a deterministic return to the title while
+preserving an intentional refresh/Forward recovery path.
+
+Validation evidence:
+
+- root `npm test`: 37/37 tests pass;
+- real local Worker/browser flow: host plus guests joined by both link and
+  typed code, while a third tab was rejected as full;
+- socket Ready state, refresh recovery, copied invite URL, Back/Forward,
+  late-event dismissal, and acknowledged host cancellation were verified;
+- the lobby layout was visually inspected at its 390-pixel maximum panel width;
+- no application JavaScript errors remained after fixing the detached browser
+  timer and leave-delivery races found during interactive testing.
+
+No deployment occurred. The operating-system share API path is implemented,
+but selecting WhatsApp itself requires a physical phone after the frontend and
+backend are deployed together. Phase 3 owns the countdown-to-gameplay handoff.
+
 ## Multiplayer Phase 1 room backend (2026-07-25)
 
 Phase 1 of `MULTIPLAYER_PLAN.md` is complete locally. The existing Worker now

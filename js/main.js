@@ -22,6 +22,14 @@ import { Difficulty } from './difficulty.js';
 import { buildShareCard } from './sharecard.js';
 import { evaluateAchievements } from './achievements.js';
 import { RunContext, RUN_MODES } from './run-context.js';
+import { DuelUI, duelErrorText } from './duel-ui.js';
+import {
+  MultiplayerClient,
+  buildChallengeUrl,
+  challengeCodeFromUrl,
+  resolveMultiplayerWorkerUrl,
+  withoutChallengeUrl,
+} from './multiplayer.js';
 
 const canvas = document.getElementById('c');
 const ctx = canvas.getContext('2d');
@@ -32,6 +40,10 @@ const audio = new AudioEngine();
 const background = new Background();
 const renderer = new Renderer(ctx);
 const ui = new UI();
+const duelUI = new DuelUI();
+const multiplayer = new MultiplayerClient({
+  baseUrl: resolveMultiplayerWorkerUrl(WORKER_URL, location),
+});
 const rng = new RNG((Date.now() >>> 0) || 1);
 
 const runContext = new RunContext({ difficulty: Storage.difficulty() });
@@ -78,6 +90,292 @@ function setModal(container, initial){
 function clearModal(){
   if (releaseTrap){ releaseTrap(); releaseTrap = null; }
 }
+
+// ---------- Account-free Duel invitation + lobby ----------
+// Phase 2 stops at the synchronized countdown handoff. Phase 3 consumes that
+// handoff to launch the seeded game and report live progress.
+let duelOpen = false;
+let leavingDuel = false;
+let pendingChallenge = challengeCodeFromUrl(location.href);
+
+function duelSession(){
+  const code = multiplayer.code || challengeCodeFromUrl(location.href);
+  return code ? multiplayer.session(code) : null;
+}
+
+function focusDuel(preferred = duelUI.closeBtn){
+  setModal(duelUI.panel, preferred);
+}
+
+function showDuelLayer({ push = false } = {}){
+  duelOpen = true;
+  ui.overlay.setAttribute('aria-hidden', 'true');
+  if (push && !history.state?.stackfallDuel){
+    history.pushState({ ...(history.state || {}), stackfallDuel: true }, '', location.href);
+  }
+}
+
+function closeDuelLayer(){
+  duelOpen = false;
+  duelUI.hide();
+  multiplayer.disconnect();
+  ui.overlay.removeAttribute('aria-hidden');
+  if (ui.overlay.classList.contains('show')) setModal(ui.panel, ui.startBtn);
+  else clearModal();
+}
+
+function putDuelInUrl(code){
+  const url = buildChallengeUrl(location.href, code);
+  history.replaceState({ ...(history.state || {}), stackfallDuel: true }, '', url);
+  return url;
+}
+
+function openJoinDuel(code = '', { push = true, error = '' } = {}){
+  showDuelLayer({ push });
+  duelUI.showJoin({ code, name: Storage.name(), error });
+  focusDuel(code ? duelUI.nameInput : duelUI.codeInput);
+}
+
+function showDuelError(error, action = 'Try Again'){
+  const code = error && error.code || error || 'network_error';
+  showDuelLayer();
+  duelUI.showError(code, { action });
+  focusDuel(duelUI.errorAction);
+  announce(duelErrorText(code));
+}
+
+function showCurrentLobby(room = multiplayer.room, connection = multiplayer.connection){
+  const session = duelSession();
+  if (!room || !session) return;
+  duelUI.showLobby(room, session, connection);
+  focusDuel(duelUI.readyBtn.disabled ? duelUI.closeBtn : duelUI.readyBtn);
+}
+
+async function connectLobby(code){
+  try {
+    await multiplayer.connect(code);
+    if (duelOpen) showCurrentLobby();
+    else multiplayer.disconnect();
+  } catch (error){
+    if (duelOpen) showDuelError(error, 'Reconnect');
+    else multiplayer.disconnect();
+  }
+}
+
+async function createChallenge(){
+  const name = Storage.name().trim();
+  if (!name){
+    ui.updateNameGate();
+    ui.nameInput.focus();
+    announce('Enter your name before creating a challenge.');
+    return;
+  }
+  showDuelLayer({ push: true });
+  duelUI.showBusy('Creating a private two-player room…');
+  focusDuel(duelUI.closeBtn);
+  try {
+    const { room, session } = await multiplayer.create({
+      name,
+      difficulty: runContext.selection.difficulty,
+    });
+    if (!duelOpen){ multiplayer.disconnect(); return; }
+    putDuelInUrl(session.code);
+    duelUI.showLobby(room, session, 'connecting');
+    await connectLobby(session.code);
+  } catch (error){
+    if (duelOpen) showDuelError(error);
+  }
+}
+
+async function joinChallenge({ code, name }){
+  duelUI.showBusy('Claiming the open seat…');
+  focusDuel(duelUI.closeBtn);
+  try {
+    const { room, session } = await multiplayer.join({ code, name });
+    if (!duelOpen){ multiplayer.disconnect(); return; }
+    putDuelInUrl(session.code);
+    duelUI.showLobby(room, session, 'connecting');
+    await connectLobby(session.code);
+  } catch (error){
+    const action = error && (error.code === 'room_full' || error.code === 'room_not_found')
+      ? 'Enter Another Code'
+      : 'Try Again';
+    if (duelOpen) showDuelError(error, action);
+  }
+}
+
+async function recoverChallenge(code, { normalizeHistory = true } = {}){
+  showDuelLayer();
+  if (normalizeHistory && !history.state?.stackfallDuel){
+    const duelUrl = buildChallengeUrl(location.href, code);
+    history.replaceState({ ...(history.state || {}), stackfallDuel: false }, '', withoutChallengeUrl(location.href));
+    history.pushState({ stackfallDuel: true }, '', duelUrl);
+  }
+  duelUI.showBusy('Opening your challenge…');
+  focusDuel(duelUI.closeBtn);
+  try {
+    const { room, session } = await multiplayer.recover(code);
+    if (!duelOpen){ multiplayer.disconnect(); return; }
+    if (room.state === 'cancelled') showDuelError('room_cancelled', 'Back to Title');
+    else if (session) showCurrentLobby(room);
+    else if (room.seats && room.seats.guest) showDuelError('room_full', 'Enter Another Code');
+    else openJoinDuel(code, { push: false });
+  } catch (error){
+    if (error && error.code === 'unauthorized') multiplayer.clearSession(code);
+    if (duelOpen){
+      showDuelError(error, error && error.code === 'offline' ? 'Retry Connection' : 'Enter Another Code');
+    }
+  }
+}
+
+async function copyDuelText(value, button){
+  try {
+    if (!navigator.clipboard || !navigator.clipboard.writeText) throw new Error('clipboard unavailable');
+    await navigator.clipboard.writeText(value);
+    duelUI.flash(button, 'Copied ✓');
+  } catch (error){
+    // Older WebViews and some privacy modes deny the asynchronous Clipboard
+    // API even after a tap. Keep a synchronous selection fallback before the
+    // final manual prompt so Copy remains a one-tap action on those devices.
+    const field = document.createElement('textarea');
+    field.value = value;
+    field.setAttribute('readonly', '');
+    field.style.position = 'fixed';
+    field.style.opacity = '0';
+    document.body.appendChild(field);
+    field.select();
+    let copied = false;
+    try { copied = document.execCommand('copy'); } catch (e) { /* manual fallback below */ }
+    field.remove();
+    if (copied) duelUI.flash(button, 'Copied ✓');
+    else window.prompt('Copy this invite:', value);
+  }
+}
+
+function challengeLink(){
+  const code = multiplayer.code || (multiplayer.room && multiplayer.room.code);
+  return buildChallengeUrl(location.href, code);
+}
+
+async function shareChallenge(){
+  const room = multiplayer.room;
+  if (!room) return;
+  const url = challengeLink();
+  const difficulty = room.difficulty === 'hardcore' ? 'Hardcore' : 'Normal';
+  const text = `I challenge you to a ${difficulty} StackFall duel. Join my game: ${room.code}`;
+  if (navigator.share){
+    try {
+      await navigator.share({ title: 'StackFall Duel', text, url });
+      return;
+    } catch (error){
+      if (error && error.name === 'AbortError') return;
+    }
+  }
+  await copyDuelText(`${text} ${url}`, duelUI.shareBtn);
+}
+
+duelUI.setCallbacks({
+  close: () => {
+    if (history.state?.stackfallDuel) history.back();
+    else closeDuelLayer();
+  },
+  join: joinChallenge,
+  ready: () => {
+    try {
+      multiplayer.ready();
+      const session = duelSession();
+      if (session && multiplayer.room && multiplayer.room.seats[session.seat]){
+        multiplayer.room.seats[session.seat].ready = true;
+        showCurrentLobby();
+      }
+    } catch (error){ showDuelError(error, 'Reconnect'); }
+  },
+  share: shareChallenge,
+  copyLink: () => copyDuelText(challengeLink(), duelUI.copyLinkBtn),
+  copyCode: () => copyDuelText(multiplayer.room.code, duelUI.copyCodeBtn),
+  leave: async () => {
+    leavingDuel = true;
+    try {
+      await multiplayer.leave();
+      if (history.state?.stackfallDuel) history.back();
+      else closeDuelLayer();
+      announce('You left the duel.');
+    } finally {
+      leavingDuel = false;
+    }
+  },
+  retry: () => {
+    if (duelUI.errorCode === 'room_cancelled'){
+      if (history.state?.stackfallDuel) history.back();
+      else closeDuelLayer();
+      return;
+    }
+    if (['bad_code', 'room_full', 'room_not_found', 'room_started'].includes(duelUI.errorCode)){
+      openJoinDuel('', { push: false });
+      return;
+    }
+    const code = multiplayer.code || challengeCodeFromUrl(location.href) || '';
+    const session = code && multiplayer.session(code);
+    if (session) recoverChallenge(code, { normalizeHistory: false });
+    else openJoinDuel('', { push: false });
+  },
+});
+
+for (const type of ['snapshot', 'player_joined', 'presence', 'result']){
+  multiplayer.on(type, (payload) => {
+    if (!duelOpen || !payload.room) return;
+    if (payload.room.state === 'cancelled'){
+      multiplayer.clearSession(payload.room.code);
+      if (!leavingDuel) showDuelError('room_cancelled', 'Back to Title');
+    } else {
+      showCurrentLobby(payload.room);
+    }
+  });
+}
+multiplayer.on('countdown', (payload) => {
+  if (!duelOpen || !multiplayer.room) return;
+  const room = {
+    ...multiplayer.room,
+    state: 'countdown',
+    seed: payload.seed,
+    startAt: payload.startAt,
+    round: payload.round,
+    seats: {
+      host: { ...multiplayer.room.seats.host, ready: true },
+      guest: { ...multiplayer.room.seats.guest, ready: true },
+    },
+  };
+  multiplayer.room = room;
+  showCurrentLobby(room);
+  announce('Both players are ready. Duel countdown synchronized.');
+});
+multiplayer.on('expired', () => {
+  if (duelOpen) showDuelError('room_not_found', 'Enter Another Code');
+});
+multiplayer.on('error', (payload) => {
+  if (duelOpen) showDuelError(payload.code, payload.code === 'socket_replaced' ? 'Enter Another Code' : 'Try Again');
+});
+multiplayer.on('transport_error', ({ error }) => {
+  if (duelOpen && multiplayer.connection !== 'reconnecting') showDuelError(error, 'Reconnect');
+});
+multiplayer.on('connection', ({ connection }) => {
+  if (duelOpen && multiplayer.room && duelSession()) duelUI.setConnection(connection);
+});
+
+window.addEventListener('popstate', () => {
+  if (history.state?.stackfallDuel){
+    const code = challengeCodeFromUrl(location.href);
+    if (code) recoverChallenge(code, { normalizeHistory: false });
+    else openJoinDuel('', { push: false });
+  } else if (duelOpen){
+    closeDuelLayer();
+  }
+});
+window.addEventListener('online', () => {
+  if (duelOpen && duelSession() && multiplayer.connection !== 'connected'){
+    multiplayer.retry().catch((error) => showDuelError(error, 'Reconnect'));
+  }
+});
 
 const game = new Game({
   view, effects, audio, haptics: Haptics, rng,
@@ -344,6 +642,10 @@ function resize(){
 function dismissTutorial(){
   Storage.setTutorialSeen();
   ui.hideTutorial();
+  if (pendingChallenge !== null){
+    openPendingChallenge();
+    return;
+  }
   // Hand the focus trap to the start panel that's now the active modal.
   setModal(ui.panel, ui.startBtn);
   announce('Tutorial closed. Tap to start.');
@@ -363,6 +665,22 @@ if (!Storage.tutorialSeen()){
   setModal(ui.tutorialOverlay, ui.tutorialBtn);
 } else {
   setModal(ui.panel, ui.startBtn);
+  if (pendingChallenge !== null) queueMicrotask(openPendingChallenge);
+}
+
+function openPendingChallenge(){
+  const code = pendingChallenge;
+  pendingChallenge = null;
+  if (code === ''){
+    if (!history.state?.stackfallDuel){
+      const invalidUrl = location.href;
+      history.replaceState({ ...(history.state || {}), stackfallDuel: false }, '', withoutChallengeUrl(location.href));
+      history.pushState({ stackfallDuel: true }, '', invalidUrl);
+    }
+    showDuelError('bad_code', 'Enter a Code');
+    return;
+  }
+  if (code) recoverChallenge(code);
 }
 
 async function seedForMode(forMode){
@@ -516,6 +834,21 @@ ui.setClickSound(() => uiSound('blip'));
 // Start button: own handler so it doesn't double-fire with the wrap.
 ui.startBtn.addEventListener('pointerdown', (e) => e.stopPropagation());
 ui.startBtn.addEventListener('click', (e) => { e.stopPropagation(); uiSound('blip'); start(); });
+
+// Duel entry points stay separate from single-player Start so an accidental tap
+// can never create a room or consume an invitation.
+ui.challengeBtn.addEventListener('pointerdown', (e) => e.stopPropagation());
+ui.challengeBtn.addEventListener('click', (e) => {
+  e.stopPropagation();
+  uiSound('blip');
+  createChallenge();
+});
+ui.joinDuelBtn.addEventListener('pointerdown', (e) => e.stopPropagation());
+ui.joinDuelBtn.addEventListener('click', (e) => {
+  e.stopPropagation();
+  uiSound('blip');
+  openJoinDuel();
+});
 
 // Share button (game-over only).
 ui.shareBtn.addEventListener('pointerdown', (e) => e.stopPropagation());

@@ -45,6 +45,10 @@
       <div id="name-hint" class="name-hint"></div>
       <div id="submitted-as" class="submitted-as" hidden></div>
       <button id="start-btn">Start</button>
+      <div class="duel-entry-row" aria-label="Play with a friend">
+        <button id="challenge-btn" class="duel-entry primary">Challenge a Friend</button>
+        <button id="join-duel-btn" class="duel-entry">Join Duel</button>
+      </div>
       <button id="share-btn" class="ghost-btn" hidden>Share Score</button>
       <div class="toggle-row">
         <button id="mode-btn" class="ghost-btn toggle-btn">Endless</button>
@@ -66,6 +70,59 @@
           <span class="health-dot"></span><span id="health-text">Online</span>
         </div>
       </div>
+    </div>
+  </div>
+
+  <!-- Account-free two-player challenge and lobby flow. -->
+  <div id="duel-overlay" aria-hidden="true">
+    <div class="duel-panel" role="dialog" aria-modal="true" aria-labelledby="duel-title" aria-describedby="duel-status">
+      <button id="duel-close" class="duel-close" aria-label="Close Duel">×</button>
+      <div class="eyebrow">Two-player Duel</div>
+      <h1 id="duel-title">Challenge a Friend</h1>
+      <div id="duel-status" class="duel-status" role="status" aria-live="polite">Create a room or enter a challenge code.</div>
+
+      <form id="duel-join-view" class="duel-view" hidden>
+        <label class="duel-label" for="duel-name">Your name</label>
+        <input id="duel-name" class="duel-input" type="text" maxlength="12" placeholder="Player name" autocomplete="nickname" spellcheck="false" required>
+        <label class="duel-label" for="duel-code">Challenge code</label>
+        <input id="duel-code" class="duel-input duel-code-input" type="text" maxlength="9" placeholder="XXXX-XXXX" autocomplete="off" autocapitalize="characters" spellcheck="false" inputmode="text" required>
+        <div id="duel-form-error" class="duel-form-error"></div>
+        <button id="duel-join-submit" class="duel-primary" type="submit">Join Game</button>
+      </form>
+
+      <div id="duel-lobby-view" class="duel-view" hidden>
+        <div class="duel-code-card">
+          <span>Game code</span>
+          <strong id="duel-room-code">----</strong>
+          <small id="duel-difficulty">Normal · shared seed</small>
+        </div>
+        <div class="duel-players" aria-label="Players">
+          <div class="duel-player" id="duel-host-row">
+            <span class="duel-seat">Host</span><strong id="duel-host-name">Waiting…</strong><span id="duel-host-state" class="duel-player-state"></span>
+          </div>
+          <div class="duel-versus" aria-hidden="true">VS</div>
+          <div class="duel-player" id="duel-guest-row">
+            <span class="duel-seat">Guest</span><strong id="duel-guest-name">Waiting…</strong><span id="duel-guest-state" class="duel-player-state"></span>
+          </div>
+        </div>
+        <div id="duel-share-actions" class="duel-share-actions">
+          <button id="duel-share" class="duel-secondary" type="button">Share Invite</button>
+          <button id="duel-copy-link" class="duel-secondary" type="button">Copy Link</button>
+          <button id="duel-copy-code" class="duel-secondary" type="button">Copy Code</button>
+        </div>
+        <button id="duel-ready" class="duel-primary" type="button">I'm Ready</button>
+        <div id="duel-lobby-note" class="duel-lobby-note">The duel starts when both players are ready.</div>
+        <button id="duel-leave" class="duel-text-btn" type="button">Leave this game</button>
+      </div>
+
+      <div id="duel-error-view" class="duel-view" hidden>
+        <div class="duel-error-mark" aria-hidden="true">!</div>
+        <p id="duel-error-copy">This room is unavailable.</p>
+        <button id="duel-error-action" class="duel-primary" type="button">Try Again</button>
+      </div>
+
+      <div id="duel-busy" class="duel-busy" hidden aria-hidden="true"><span></span><span></span><span></span></div>
+      <div class="duel-privacy">No account, email, phone number, or contact access required.</div>
     </div>
   </div>
 

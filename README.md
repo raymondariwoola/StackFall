@@ -27,6 +27,8 @@ StackFall/
 │   ├── audio.js          # procedural Web Audio
 │   ├── haptics.js        # Vibration API
 │   ├── storage.js        # localStorage (best/scores/name/mute)
+│   ├── multiplayer.js    # Duel HTTP/WebSocket session + reconnect client
+│   ├── duel-ui.js        # challenge-link, code-entry, and lobby presentation
 │   ├── ui.js             # HUD + overlay DOM
 │   └── leaderboard.js    # Worker client (set WORKER_URL here)
 ├── shared/               # versioned browser/Worker multiplayer contracts
@@ -86,6 +88,23 @@ The integration client creates and joins a room, opens both WebSockets, reclaims
 the host seat as a refreshed client, rejects ticket replay, completes a match,
 and verifies the result. It targets `http://127.0.0.1:8788` by default; override
 that with `STACKFALL_WORKER_URL` when deliberately testing another environment.
+
+### Try the Duel lobby locally
+
+Start the Worker as above, then serve the static game from the repository root:
+
+```bash
+python -m http.server 8137 --bind 127.0.0.1
+# open http://127.0.0.1:8137/
+```
+
+On localhost only, the Duel client automatically uses
+`http://127.0.0.1:8788`; deployed pages continue to use the configured Worker.
+Choose **Challenge a Friend**, then open the generated link in another tab or
+choose **Join Duel** and enter its code. Each tab keeps only its own private seat
+capability in `sessionStorage`, so a refresh can reclaim that seat without an
+account. Phase 2 currently ends at the synchronized Ready/countdown handoff;
+Phase 3 connects that handoff to live gameplay.
 
 ---
 

@@ -1,6 +1,6 @@
 # StackFall Two-Player Multiplayer Plan
 
-Status: implementation in progress · Prepared: 2026-07-25 · Phases 0–1
+Status: implementation in progress · Prepared: 2026-07-25 · Phases 0–2
 completed: 2026-07-25
 
 ## Decision
@@ -414,7 +414,7 @@ is needed yet. When a shared online test is desired, the repository owner must
 authorize Wrangler (if the local session is not already logged in) and approve
 `npx wrangler deploy`; that deploy applies the `v2` Durable Object migration.
 
-### Phase 2 — Challenge and Lobby UX
+### Phase 2 — Challenge and Lobby UX — ✅ Complete (2026-07-25)
 
 Goal: complete the no-account invitation flow.
 
@@ -434,6 +434,41 @@ Acceptance gate:
 - a guest can join by either link or typed code;
 - no account, email, phone number, or personal contact permission is requested;
 - Back/refresh/reconnect behavior is predictable on mobile.
+
+Result:
+
+- added distinct **Challenge a Friend** and **Join Duel** title actions plus a
+  compact, keyboard-accessible join/lobby/error overlay;
+- added `js/multiplayer.js` for create/read/join requests, capability sessions,
+  one-use ticket exchange, ordered socket messages, reconnect backoff, and
+  authoritative leave acknowledgement;
+- added `js/duel-ui.js` for normalized code entry, two-seat presence/readiness,
+  difficulty, sharing, busy states, and clear invalid, expired, full,
+  cancelled, offline, replaced-seat, and unavailable-service outcomes;
+- challenge URLs use only `?duel=XXXX-XXXX`; private host/guest capabilities
+  remain scoped to `sessionStorage` and never enter history or shared links;
+- direct links reclaim an owned seat after refresh, otherwise open the guest
+  name/code flow; manual Back closes without abandoning the recoverable session,
+  and Forward/reopening the link reconnects it;
+- Share Invite uses the native Web Share API when available (so installed apps
+  such as WhatsApp appear through the operating-system share sheet), with
+  clipboard and manual-copy fallbacks; Copy Link and Copy Code are separate;
+- localhost pages resolve Duel traffic to the local Wrangler port while
+  production continues to use the configured deployed Worker URL;
+- expanded the root suite to 37 passing tests, including session secrecy,
+  URL construction, ticket exchange, sequencing, reconnect replacement,
+  leave acknowledgement, lobby readiness, and user-facing error states;
+- completed real-browser validation against local Wrangler with isolated host,
+  link-guest, code-guest, and third-player tabs. It covered both join paths,
+  room-full handling, synchronized Ready, invite copying, refresh/Forward seat
+  recovery, Back dismissal under late socket events, and host cancellation.
+
+Phase 2 intentionally stops at the server countdown handoff. The overlay keeps
+that synchronized state visible; Phase 3 will start the seeded game and send
+live progress. No Worker or website deployment occurred. A physical phone's
+WhatsApp destination remains a short real-device confirmation once Phases 2–3
+are deployed together; the native share invocation and non-share fallbacks are
+implemented and browser-tested.
 
 ### Phase 3 — Live Duel Gameplay (MVP)
 
