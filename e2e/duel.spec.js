@@ -157,6 +157,7 @@ test('exiting an unfinished Beat My Tower run cancels it and restores the title'
   const page = await context.newPage();
   try {
     await page.goto('/');
+    await page.evaluate(() => history.replaceState({ stackfallDuel: true }, '', location.href));
     await page.locator('#beat-btn').click();
     await expect(page.locator('#duel-hud')).toBeVisible({ timeout: 10_000 });
     const code = new URL(page.url()).searchParams.get('beat');

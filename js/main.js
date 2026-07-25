@@ -356,6 +356,15 @@ function returnFromDuelError(){
   else closeDuelLayer();
 }
 
+function returnFromBeatChallenge(){
+  closeDuelLayer();
+  history.replaceState(
+    { ...(history.state || {}), stackfallDuel: false },
+    '',
+    withoutBeatUrl(location.href),
+  );
+}
+
 function putDuelInUrl(code){
   const url = buildChallengeUrl(location.href, code);
   history.replaceState({ ...(history.state || {}), stackfallDuel: true }, '', url);
@@ -655,8 +664,7 @@ duelUI.setCallbacks({
   copyCode: () => copyDuelText((duelUI.room || multiplayer.room).code, duelUI.copyCodeBtn),
   leave: async () => {
     if (duelUI.room?.kind === 'beat'){
-      closeDuelLayer();
-      if (history.state?.stackfallDuel) history.back();
+      returnFromBeatChallenge();
       return;
     }
     leavingDuel = true;
@@ -678,8 +686,7 @@ duelUI.setCallbacks({
         if (session?.seat === 'host') await beatChallenge.cancel();
       } catch (error){ /* unfinished challenges expire automatically */ }
       resetDuelToTitle();
-      closeDuelLayer();
-      if (history.state?.stackfallDuel) history.back();
+      returnFromBeatChallenge();
       return;
     }
     duelUI.forfeitBtn.disabled = true;
@@ -710,9 +717,9 @@ duelUI.setCallbacks({
     finally {
       leavingDuel = false;
       resetDuelToTitle();
-      if (exitingBeat) closeDuelLayer();
-      if (history.state?.stackfallDuel) history.back();
-      else if (!exitingBeat) closeDuelLayer();
+      if (exitingBeat) returnFromBeatChallenge();
+      else if (history.state?.stackfallDuel) history.back();
+      else closeDuelLayer();
     }
   },
   retry: () => {
