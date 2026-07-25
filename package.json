@@ -1,0 +1,10 @@
+{
+  "name": "stackfall",
+  "private": true,
+  "version": "1.0.0",
+  "type": "module",
+  "description": "StackFall static game and automated validation",
+  "scripts": {
+    "test": "node scripts/check-syntax.mjs && node --test"
+  }
+}

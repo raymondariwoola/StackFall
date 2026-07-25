@@ -21,6 +21,7 @@ import { announce, trapFocus, prefersReducedMotion } from './a11y.js';
 import { Difficulty } from './difficulty.js';
 import { buildShareCard } from './sharecard.js';
 import { evaluateAchievements } from './achievements.js';
+import { RunContext, RUN_MODES } from './run-context.js';
 
 const canvas = document.getElementById('c');
 const ctx = canvas.getContext('2d');
@@ -33,22 +34,18 @@ const renderer = new Renderer(ctx);
 const ui = new UI();
 const rng = new RNG((Date.now() >>> 0) || 1);
 
-const MODE_CYCLE = ['endless', 'daily', 'practice'];
-let mode = 'endless';      // 'endless' | 'daily' | 'practice' — for the NEXT run
-let runMode = mode;        // the mode captured when the CURRENT run started
-let difficulty = Storage.difficulty();   // 'normal' | 'hardcore' — the NEXT run
-let runDifficulty = difficulty;          // captured when the CURRENT run started
+const runContext = new RunContext({ difficulty: Storage.difficulty() });
 let overlayTimer = null;
-let lastRun = { score: 0, floors: 0, mode, difficulty, streak: 0 };
+let lastRun = { score: 0, floors: 0, ...runContext.selection, streak: 0 };
 let startToken = 0;        // monotonic id: only the latest start() may reset
 let starting = false;      // true while a Daily seed is being fetched
 let paused = false;        // our pause (button/visibility), distinct from cheat pause
 
 audio.setMuted(Storage.muted());
 ui.setSoundIcon(Storage.muted());
-ui.setMode(mode);
-Difficulty.set(difficulty);
-ui.setDifficulty(difficulty);
+ui.setMode(runContext.selection.mode);
+Difficulty.set(runContext.selection.difficulty);
+ui.setDifficulty(runContext.selection.difficulty);
 
 // ---------- Settings application (persisted, applied live) ----------
 function applyReducedMotion(){
@@ -91,8 +88,9 @@ const game = new Game({
       // Capture the mode/difficulty the run was actually played in — the toggles
       // may change afterwards, so the captured values (not the live ones) are
       // authoritative for submission, board refresh, history, and share.
-      const playedMode = runMode;
-      const playedDifficulty = runDifficulty;
+      const completedRun = runContext.complete() || runContext.selection;
+      const playedMode = completedRun.mode;
+      const playedDifficulty = completedRun.difficulty;
       const streak = maxCombo || 0;
       const practice = playedMode === 'practice';
       lastRun = { score, floors, mode: playedMode, difficulty: playedDifficulty, streak };
@@ -227,7 +225,11 @@ async function shareRun(){
 // mode toggle.
 // `daily`/`diff` pick the board. Practice has no board of its own, so it shows
 // the all-time board for the selected difficulty.
-async function refreshRemoteBoard(daily = mode === 'daily', diff = difficulty, rank = null){
+async function refreshRemoteBoard(
+  daily = runContext.selection.mode === RUN_MODES.DAILY,
+  diff = runContext.selection.difficulty,
+  rank = null,
+){
   if (!WORKER_URL) return;
   try {
     const data = await fetchLeaderboard(daily, diff);
@@ -248,7 +250,7 @@ async function refreshRemoteBoard(daily = mode === 'daily', diff = difficulty, r
 // Evaluated from live run stats. Practice is consequence-free, so it never
 // unlocks anything (matching "practice records nothing").
 function checkAchievements(){
-  if (runMode === 'practice') return;
+  if (runContext.active && runContext.active.mode === RUN_MODES.PRACTICE) return;
   const earned = evaluateAchievements({ floors: game.floors, perfects: game.perfects }, Storage);
   if (!earned.length) return;
   for (const a of earned){
@@ -295,6 +297,7 @@ function timeToNextUtcMidnight(){
   return `${p(h)}:${p(m)}:${p(s)}`;
 }
 function updateStats(){
+  const { mode, difficulty } = runContext.selection;
   const dailyStats = Storage.dailyStats();
   ui.renderStatsStrip({
     mode,
@@ -307,7 +310,7 @@ function updateStats(){
 // Live countdown: refresh once a second while the title/game-over panel is up in
 // Daily mode so the "next board" clock ticks down.
 setInterval(() => {
-  if (mode === 'daily' && ui.overlay.classList.contains('show')) updateStats();
+  if (runContext.selection.mode === RUN_MODES.DAILY && ui.overlay.classList.contains('show')) updateStats();
 }, 1000);
 
 let bgW = 0, bgH = 0;
@@ -317,6 +320,9 @@ function resize(){
   // Mobile browsers fire resize on every URL-bar show/hide. Reallocating the
   // canvas backing store for a no-op change is pure jank.
   if (W === view.W && H === view.H && DPR === view.DPR) return;
+
+  const oldW = view.W;
+  if (oldW > 0 && W !== oldW) game.resizeWidth(oldW, W);
 
   view.DPR = DPR;
   view.W = W;
@@ -381,7 +387,9 @@ async function start(){
   clearTimeout(overlayTimer);
 
   // Capture the mode for THIS run up front; the toggle may change afterwards.
-  const forMode = mode;
+  const selectedRun = runContext.selection;
+  const forMode = selectedRun.mode;
+  const forDifficulty = selectedRun.difficulty;
   const myToken = ++startToken;
 
   // For Daily we must await the network seed. Keep the overlay up with a
@@ -417,18 +425,17 @@ async function start(){
     document.activeElement.blur();
   }
 
-  runMode = forMode;
-  runDifficulty = difficulty;
-  Difficulty.set(difficulty);   // ensure the game reads the intended profile
+  const activeRun = runContext.begin(seed, { mode: forMode, difficulty: forDifficulty });
+  Difficulty.set(activeRun.difficulty);   // ensure the game reads the captured profile
   ui.setScore(0);
   ui.setCombo(0);
   ui.setPauseButtonVisible(true);
   ui.setPracticeBadge(forMode === 'practice');   // explicit, persistent label
   ui.setSubmitResult(null);                      // clear the previous run's outcome
   background.setWorld(worldFor(0));
-  game.reset(seed);
+  game.reset(activeRun.seed);
   cheatMenu.updateBadge();   // reset() clears `cheated` — drop a stale badge
-  const diffLabel = difficulty === 'hardcore' ? ' hardcore' : '';
+  const diffLabel = activeRun.difficulty === 'hardcore' ? ' hardcore' : '';
   const modeLabel = forMode === 'daily' ? 'Daily' : forMode === 'practice' ? 'Practice' : 'Endless';
   announce(modeLabel + diffLabel + ' run started' + (forMode === 'practice' ? ' — nothing will be recorded' : ''));
 }
@@ -520,13 +527,13 @@ ui.modeBtn.addEventListener('click', (e) => {
   e.stopPropagation();
   uiSound('toggle');
   // Cycle Endless → Daily → Practice → Endless.
-  mode = MODE_CYCLE[(MODE_CYCLE.indexOf(mode) + 1) % MODE_CYCLE.length];
-  ui.setMode(mode);
+  const selected = runContext.cycleMode();
+  ui.setMode(selected.mode);
   updateStats();
   // Show the board for the newly selected competition so the toggle actually
   // changes what the player is comparing against, not just the seed.
   // Practice has no board of its own — show the all-time one.
-  refreshRemoteBoard(mode === 'daily', difficulty);
+  refreshRemoteBoard(selected.mode === RUN_MODES.DAILY, selected.difficulty);
 });
 
 // Difficulty toggle (applies to the next run).
@@ -534,13 +541,14 @@ ui.difficultyBtn.addEventListener('pointerdown', (e) => e.stopPropagation());
 ui.difficultyBtn.addEventListener('click', (e) => {
   e.stopPropagation();
   uiSound('toggle');
-  difficulty = difficulty === 'hardcore' ? 'normal' : 'hardcore';
-  Difficulty.set(difficulty);
-  Storage.setDifficulty(difficulty);
-  ui.setDifficulty(difficulty);
+  const difficulty = runContext.selection.difficulty === 'hardcore' ? 'normal' : 'hardcore';
+  const selected = runContext.setDifficulty(difficulty);
+  Difficulty.set(selected.difficulty);
+  Storage.setDifficulty(selected.difficulty);
+  ui.setDifficulty(selected.difficulty);
   updateStats();
   // Normal and Hardcore are separate boards — show the one you're playing.
-  refreshRemoteBoard(mode === 'daily', difficulty);
+  refreshRemoteBoard(selected.mode === RUN_MODES.DAILY, selected.difficulty);
 });
 
 // Sound toggle (usable mid-run).

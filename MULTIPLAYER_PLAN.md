@@ -1,7 +1,7 @@
 # StackFall Two-Player Multiplayer Plan
 
-Status: proposed · Prepared: 2026-07-25 · Scope: planning only; no multiplayer
-code has been implemented
+Status: implementation in progress · Prepared: 2026-07-25 · Phase 0 completed:
+2026-07-25
 
 ## Decision
 
@@ -318,7 +318,7 @@ would not reduce the required Worker/Durable Object work.
 
 ## Phased Implementation
 
-### Phase 0 — Contracts and Test Foundation
+### Phase 0 — Contracts and Test Foundation — ✅ Complete (2026-07-25)
 
 Goal: make the current single-player behavior safe to extend.
 
@@ -341,6 +341,25 @@ Acceptance gate:
 - seeded Hardcore schedules remain stable;
 - resizing no longer corrupts an active tower;
 - all tests run from one documented command.
+
+Result:
+
+- added an immutable `RunContext` seam with explicit future Duel support;
+- added the shared version-1 room/message/request contract and room lifecycle;
+- added one neutral `Game.onProgress` event per resolved landing;
+- added proportional horizontal reflow for active-run viewport changes;
+- extracted testable Worker validation helpers without changing its API;
+- added `npm test` and GitHub Actions validation;
+- added 15 passing behavior tests, including seeded Hardcore stability and
+  active-run resize geometry;
+- completed a local browser smoke test of tutorial, name gate, mode cycling,
+  Practice start, active gameplay UI, and remote-board loading with no
+  application console errors;
+- reconciled the README with GitHub Pages, Durable Object storage, current test
+  instructions, and the intended `BLOCK_CHEATED = "1"` source configuration.
+
+No Cloudflare or GitHub dashboard action was required for this phase. The
+`BLOCK_CHEATED` source correction takes effect only on a later Worker deploy.
 
 ### Phase 1 — Room Backend
 
@@ -452,11 +471,13 @@ asynchronous lifecycle rules too early would slow down delivery.
 ```text
 js/
   main.js                 # integrates RunContext; remains app coordinator
+  run-context.js          # selected settings + immutable active snapshot
   game.js                 # adds neutral progress callback
   multiplayer.js          # HTTP/WebSocket client, tickets, reconnect
   duel-ui.js              # challenge, join, lobby, opponent HUD, result
-  duel-protocol.js        # versioned client message validation/constants
   storage.js              # room-scoped session helpers only
+shared/
+  duel-protocol.js        # versioned browser/Worker validation + state contract
 worker/
   src/index.js            # route dispatch, existing leaderboard unchanged
   src/match-room.js       # MatchRoom Durable Object

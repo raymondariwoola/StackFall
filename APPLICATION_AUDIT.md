@@ -7,6 +7,30 @@ GitHub Pages/Worker deployment shape visible in this repository. This is a
 static code audit; production behavior, DNS, deployed Worker variables, KV
 contents, and real-device behavior were not directly inspected.
 
+## Multiplayer Phase 0 foundation (2026-07-25)
+
+Phase 0 of `MULTIPLAYER_PLAN.md` is complete. It intentionally adds no live
+room/backend behavior yet; it creates the safe seams and committed validation
+needed before the Worker gains multiplayer state.
+
+- `js/run-context.js` now owns next-run selection and an immutable active-run
+  snapshot, replacing the loose mode/difficulty globals in `js/main.js`.
+- `shared/duel-protocol.js` defines protocol version 1, room states and legal
+  transitions, room-code/name normalization, HTTP request validation, and the
+  allowed client/server WebSocket message types.
+- `Game` emits one `onProgress` payload per landed floor and proportionally
+  rescales stored horizontal geometry on viewport-width changes.
+- Existing Worker validation helpers are exported for direct tests, and score
+  validation now uses the tested `isValidScore` helper.
+- Root `npm test` runs dependency-free syntax checks and 15 Node tests. GitHub
+  Actions runs the same command on pushes and pull requests.
+- Local browser smoke validation covered the tutorial/name gate, mode cycle,
+  Practice start path, active canvas state, and remote leaderboard loading.
+
+Source configuration now restores `BLOCK_CHEATED = "1"`, matching the intended
+production behavior described elsewhere in this audit. The deployed Worker is
+unchanged until a later explicit deploy.
+
 ## Executive summary
 
 The core game is small and understandable, and all JavaScript files pass a

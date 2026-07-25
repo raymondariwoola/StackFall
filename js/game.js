@@ -82,6 +82,29 @@ export class Game {
     this.running = true;
   }
 
+  // Preserve horizontal gameplay geometry when the viewport width changes
+  // (notably on phone rotation). Heights are derived live from the current
+  // viewport, while x/width values are stored in pixels and therefore need an
+  // explicit proportional reflow.
+  resizeWidth(oldW, newW){
+    if (!(oldW > 0) || !(newW > 0) || oldW === newW) return;
+    const scale = newW / oldW;
+    const scaleLayer = (layer) => {
+      if (!layer) return;
+      layer.w = Math.max(0, Math.min(newW, layer.w * scale));
+      layer.x = Math.max(0, Math.min(newW - layer.w, layer.x * scale));
+    };
+
+    for (const layer of this.stack) scaleLayer(layer);
+    scaleLayer(this.moving);
+    this.baseW *= scale;
+
+    if (this.hazard && this.stack.length){
+      const top = this.stack[this.stack.length - 1];
+      this.hazard.w = Math.max(0, Math.min(top.w, this.hazard.w * scale));
+    }
+  }
+
   // Effective swing speed, recomputed every frame so the Slow-Motion/Block-Speed
   // cheats affect the block ALREADY in flight, not just the next one to spawn.
   _movingSpeed(){
@@ -287,6 +310,18 @@ export class Game {
     }
 
     if (this.cb.onScore) this.cb.onScore(this.score, this.combo);
+    if (this.cb.onProgress) {
+      this.cb.onProgress({
+        seq: this.floors,
+        score: this.score,
+        floors: this.floors,
+        combo: this.combo,
+        perfects: this.perfects,
+        maxCombo: this.maxCombo,
+        widthRatio: this.baseW > 0 ? newLayer.w / this.baseW : 0,
+        cheated: this.cheated,
+      });
+    }
 
     if (newLayer.w < CONFIG.MIN_WIDTH){
       this._gameOver();

@@ -13,10 +13,9 @@
 // wider blocks / looser window sustain long streaks that Hardcore's spikes and
 // shot clock break — its 2× multiplier doesn't come close to compensating.
 //
-// Storage: a single Workers KV namespace (binding LEADERBOARD). Each board is
-// one JSON array kept trimmed to the top 50. This is intentionally simple and
-// good enough for a casual game; if you ever need strong consistency or high
-// write volume, graduate to Durable Objects or D1 (see README).
+// Storage: one SQLite-backed Leaderboard Durable Object per board key, with
+// each board kept as a JSON array trimmed to the top 50. The LEADERBOARD KV
+// namespace remains the soft rate-limit store and automatic board fallback.
 
 const KEEP = 50;              // entries stored per board
 const TOP = 20;               // entries returned to clients
@@ -132,7 +131,7 @@ async function handleScore(request, env, cors) {
 
   const maxScore = intEnv(env.MAX_SCORE, 100000);
   const score = body.score;
-  if (typeof score !== 'number' || !isFinite(score) || score < 0 || score > maxScore || score !== Math.floor(score)) {
+  if (!isValidScore(score, maxScore)) {
     return json({ ok: false, error: 'bad_score' }, 400, cors);
   }
 
@@ -308,7 +307,7 @@ async function readBoardKV(env, key) {
 async function writeBoardKV(env, key, list) {
   await env.LEADERBOARD.put(key, JSON.stringify(list.slice(0, KEEP)));
 }
-function addTo(list, entry) {
+export function addTo(list, entry) {
   list.push(entry);
   list.sort((a, b) => b.score - a.score || a.ts - b.ts);   // higher score, then earlier
   const rank = list.indexOf(entry) + 1;
@@ -389,14 +388,14 @@ function tooMany(info, cors) {
   );
 }
 
-function intEnv(v, fallback) {
+export function intEnv(v, fallback) {
   const n = parseInt(v, 10);
   return Number.isFinite(n) ? n : fallback;
 }
 
 // ---------- day-key validation ----------
 // Accept only a real calendar YYYY-MM-DD; reject junk, oversized, and impossible dates.
-function isValidDayKey(day) {
+export function isValidDayKey(day) {
   if (typeof day !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(day)) return false;
   const [y, m, d] = day.split('-').map(Number);
   if (m < 1 || m > 12 || d < 1 || d > 31) return false;
@@ -405,7 +404,7 @@ function isValidDayKey(day) {
 }
 
 // Allow today and up to `retentionDays` in the past; never the future.
-function dayWithinRetention(day, retentionDays) {
+export function dayWithinRetention(day, retentionDays) {
   const today = dailySeedString();
   if (day === today) return true;
   const dt = Date.parse(day + 'T00:00:00Z');
@@ -420,17 +419,22 @@ function retentionDays(env) {
 }
 
 // ---------- validation ----------
-function isValidDifficulty(d) { return d === 'normal' || d === 'hardcore'; }
+export function isValidDifficulty(d) { return d === 'normal' || d === 'hardcore'; }
 // Coerce a submitted difficulty (absent/unknown → 'normal'), mirroring how the
 // `daily` flag is coerced. Reads use the strict isValidDifficulty check instead.
-function cleanDifficulty(d) { return d === 'hardcore' ? 'hardcore' : 'normal'; }
+export function cleanDifficulty(d) { return d === 'hardcore' ? 'hardcore' : 'normal'; }
 
-function cleanName(n) {
+export function cleanName(n) {
   if (typeof n !== 'string') return 'anon';
   // Whitelist: letters, digits, space, and a few safe marks. Everything else
   // (including HTML-dangerous chars) is dropped, so names are XSS-safe.
   n = n.replace(/[^A-Za-z0-9 _.-]/g, '').trim().slice(0, 12);
   return n || 'anon';
+}
+
+export function isValidScore(score, maxScore) {
+  return typeof score === 'number' && Number.isFinite(score) && score >= 0 &&
+    score <= maxScore && score === Math.floor(score);
 }
 
 // ---------- daily seed (must match js/rng.js exactly) ----------

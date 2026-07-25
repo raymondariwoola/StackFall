@@ -6,8 +6,9 @@ floors the world shifts palette, the speed ticks up, and the background pushes
 up with parallax. Procedural audio, haptics, particle bursts, and a
 tower-collapse game over give it arcade-grade juice.
 
-It ships as **plain static files** (no build step) plus an **optional
-Cloudflare Worker** for a global leaderboard and a synced daily challenge.
+It ships as **plain static files** (no build step) plus a **Cloudflare Worker**
+for the deployed global leaderboard and synced daily challenge. Local play still
+works when the Worker is unavailable.
 
 ```
 StackFall/
@@ -15,6 +16,7 @@ StackFall/
 ├── css/styles.css        # all styling
 ├── js/                   # ES modules (see below)
 │   ├── main.js           # entry: boot, RAF loop, input
+│   ├── run-context.js    # selected settings + immutable active-run snapshot
 │   ├── config.js         # gameplay tunables + layout math
 │   ├── palettes.js       # worlds (block colors + bg gradient)
 │   ├── rng.js            # seedable RNG + daily-seed hashing
@@ -27,6 +29,9 @@ StackFall/
 │   ├── storage.js        # localStorage (best/scores/name/mute)
 │   ├── ui.js             # HUD + overlay DOM
 │   └── leaderboard.js    # Worker client (set WORKER_URL here)
+├── shared/               # versioned browser/Worker multiplayer contracts
+├── tests/                # dependency-free Node test suite
+├── package.json          # one-command syntax + behavior validation
 └── worker/               # optional Cloudflare Worker (leaderboard + daily seed)
     ├── src/index.js
     ├── wrangler.toml
@@ -48,6 +53,17 @@ python3 -m http.server 8000
 (or `npx serve` if you prefer Node). That's the full game — local best scores and
 a locally-computed daily seed work with no backend at all.
 
+### Run the validation suite
+
+From the repository root:
+
+```bash
+npm test
+```
+
+This runs JavaScript syntax checks plus the game, run-context, Duel-contract,
+room-state, and Worker-validation tests. It installs no dependencies.
+
 ---
 
 ## Deploy so other people can play
@@ -58,21 +74,19 @@ Cloudflare's free tier.
 
 ### Part A — Put the game on the internet (required)
 
-Host the static files on **Cloudflare Pages**. Easiest path:
+The committed deployment configuration uses **GitHub Pages** at the project
+path `/StackFall/`.
 
-**Option 1 — Connect the GitHub repo (auto-deploys on every push):**
-1. Push this repo to GitHub.
-2. Cloudflare dashboard → **Workers & Pages** → **Create** → **Pages** →
-   **Connect to Git** → pick this repo.
-3. Build settings: **Framework preset = None**, **Build command = (empty)**,
-   **Build output directory = `/`**. Save & Deploy.
-4. You get a URL like `https://stackfall.pages.dev`. Share it — people can play. ✅
+1. GitHub repository → **Settings** → **Pages**.
+2. Under **Build and deployment**, choose **Deploy from a branch**.
+3. Select `main` and `/(root)`, then save.
+4. The site is available at
+   `https://raymondariwoola.github.io/StackFall/` after GitHub finishes the
+   deployment.
 
-**Option 2 — One-off from the CLI:**
-```bash
-npx wrangler login
-npx wrangler pages deploy . --project-name stackfall
-```
+Cloudflare Pages remains a valid alternative, but moving the static site is not
+required for the planned multiplayer work. If the public origin changes, update
+the Worker's `ALLOW_ORIGIN` before deploying.
 
 > At this point the game is live. Scores are stored per-device and the daily
 > board is computed locally. Do Part B/C only if you want a **shared** leaderboard.
@@ -119,9 +133,9 @@ https://stackfall-lb.YOURNAME.workers.dev/daily
    ```js
    export const WORKER_URL = 'https://stackfall-lb.YOURNAME.workers.dev';
    ```
-2. (Recommended) Lock down CORS: in `worker/wrangler.toml` set
-   `ALLOW_ORIGIN = "https://stackfall.pages.dev"` (your Pages URL), then
-   `npx wrangler deploy` again.
+2. Keep CORS locked down: in `worker/wrangler.toml`, `ALLOW_ORIGIN` must include
+   `https://raymondariwoola.github.io` (plus an explicit local origin when
+   developing against the deployed Worker), then run `npx wrangler deploy`.
 3. **Redeploy the site** (push to GitHub, or re-run the Part A command) so the
    edited `leaderboard.js` ships.
 
@@ -154,7 +168,8 @@ curl https://stackfall-lb.YOURNAME.workers.dev/daily
 
 `POST /score` body: `{ name, score, day, ts }` with an `X-Sig` header (the client
 sets both automatically). The Worker sanitizes names, rejects implausible scores,
-and stores the top 50 per board in KV.
+and stores the top 50 per board in the serialized `Leaderboard` Durable Object.
+KV remains the rate-limit store and automatic leaderboard fallback.
 
 ---
 
@@ -204,9 +219,12 @@ site URL to the clipboard on desktop. In **Daily** mode the text calls out
 
 ## Good to know
 
-- **Free-tier limits:** Workers KV free tier allows ~1,000 writes/day and
-  ~100k reads/day. Each game-over is 2 writes (all-time + daily). Plenty for a
-  small launch; if it goes viral, move the boards to **Durable Objects** or **D1**.
+- **Free-tier limits change over time.** The current Worker uses SQLite-backed
+  Durable Objects, which are supported on Workers Free. Check the official
+  [Workers pricing](https://developers.cloudflare.com/workers/platform/pricing/)
+  and [Durable Objects pricing](https://developers.cloudflare.com/durable-objects/platform/pricing/)
+  before a larger launch. Family-and-friends leaderboard and planned Duel usage
+  should be comfortably inside the free allowances.
 - **The signature is anti-spam, not anti-cheat.** The salt ships in client code,
   so it only deters trivial `curl` posting. Truly trustworthy scores need a
   server-authoritative model (replay/validate the run) and/or Cloudflare
