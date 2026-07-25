@@ -1,11 +1,44 @@
 # StackFall Application Audit
 
-Date: 2026-07-14
+Date: 2026-07-25
 
 Scope: static client, Cloudflare Worker, Wrangler configuration, and the
 GitHub Pages/Worker deployment shape visible in this repository. This is a
 static code audit; production behavior, DNS, deployed Worker variables, KV
 contents, and real-device behavior were not directly inspected.
+
+## Multiplayer Phase 3 live Duel gameplay (2026-07-25)
+
+Phase 3 of `MULTIPLAYER_PLAN.md` is complete locally. Both players now start a
+server-seeded round on the same server-time countdown while physics and input
+stay local. The browser sends one validated progress message per landed floor
+and one final payload at game over; there is no frame-level network traffic.
+
+The live Duel HUD shows both scores, floors, opponent finish, and reconnect
+state. Cheats, Pause, Settings, and automatic visibility pausing are disabled
+for an active Duel. The Worker remains authoritative for win/loss/draw and
+forfeit reasons. Results support accessible announcements, early win-secured
+feedback, two-player rematch voting, and explicit forfeit. Duel runs are kept
+as labelled local history only and never enter existing personal-best,
+global, or daily competition paths.
+
+Validation evidence:
+
+- root `npm test`: 43/43 tests pass, with all prior single-player and Worker
+  validation still green;
+- real local Wrangler integration now completes a match over two WebSockets,
+  starts a second round with a new seed, and resolves a countdown forfeit;
+- the expanded integration found and fixed a missing legal
+  `COUNTDOWN → FORFEIT` transition that had made the existing leave handler
+  return a server error during that state;
+- local health and match API probes passed. The available Chrome-control
+  surface blocked cross-port requests to `127.0.0.1:8788`, so no new Phase 3
+  browser claim is made; Phase 2 remains the latest successful local browser
+  flow evidence.
+
+No deployment occurred. Production acceptance still requires an approved
+Worker/site deployment followed by a two-phone WhatsApp invitation, countdown,
+background/reconnect, result, forfeit, and rematch pass.
 
 ## Multiplayer Phase 2 challenge and lobby UX (2026-07-25)
 

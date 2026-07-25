@@ -412,7 +412,8 @@ export class MatchRoom {
           room = startCountdown(room, now);
           await this._save(room);
           await this._broadcast('countdown', {
-            seed: room.seed, startAt: room.startAt, round: room.round, difficulty: room.difficulty,
+            seed: room.seed, startAt: room.startAt, round: room.round,
+            difficulty: room.difficulty, serverTime: now,
           });
         } else {
           await this._save(room);
@@ -476,7 +477,8 @@ export class MatchRoom {
           room = startCountdown(room, now, { rematch: true });
           await this._save(room);
           await this._broadcast('countdown', {
-            seed: room.seed, startAt: room.startAt, round: room.round, difficulty: room.difficulty,
+            seed: room.seed, startAt: room.startAt, round: room.round,
+            difficulty: room.difficulty, serverTime: now,
           });
         } else {
           room.updatedAt = now;

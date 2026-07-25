@@ -164,6 +164,9 @@ test('ready messages start one seeded countdown and duplicate sequences are reje
   harness.state.sockets.push(host, guest);
   await readyAndStart(harness, host, guest);
 
+  const countdown = host.sent.find((message) => message.type === 'countdown');
+  assert.equal(countdown.payload.serverTime, 10_000);
+
   await harness.match.webSocketMessage(host, envelope('progress', 1, progress()));
   let room = await harness.state.storage.get(ROOM_STORAGE_KEY);
   assert.equal(room.seats.host.progress.floors, 1);
@@ -211,6 +214,22 @@ test('two finishes produce a deterministic result and two votes start a fresh ro
   assert.equal(room.round, 2);
   assert.ok(Number.isInteger(room.seed) && room.seed > 0);
   assert.equal(room.result, null);
+});
+
+test('leaving during the countdown immediately forfeits the round', async () => {
+  const harness = await setupRoom();
+  await joinGuest(harness);
+  const host = new FakeSocket('host');
+  const guest = new FakeSocket('guest');
+  harness.state.sockets.push(host, guest);
+  await harness.match.webSocketMessage(host, envelope('ready', 0));
+  await harness.match.webSocketMessage(guest, envelope('ready', 0));
+
+  await harness.match.webSocketMessage(guest, envelope('leave', 1));
+  const room = await harness.state.storage.get(ROOM_STORAGE_KEY);
+  assert.equal(room.state, ROOM_STATES.FORFEIT);
+  assert.equal(room.result.winner, 'host');
+  assert.equal(room.result.reason, 'left');
 });
 
 test('cheated progress causes an immediate server-owned forfeit', async () => {

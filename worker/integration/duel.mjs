@@ -148,6 +148,7 @@ try {
   await guest.next('countdown');
   assert.ok(Number.isInteger(countdown.payload.seed));
   assert.equal(countdown.payload.round, 1);
+  assert.ok(Number.isFinite(countdown.payload.serverTime));
 
   const waitMs = Math.max(0, countdown.payload.startAt - Date.now() + 100);
   await new Promise((resolve) => setTimeout(resolve, waitMs));
@@ -160,6 +161,7 @@ try {
   await guest.next('opponent_finished');
   guest.send('finish', 1, progress(80, 7));
   const result = await host.next('result');
+  console.log('Round one result received.');
   assert.equal(result.payload.room.state, 'finished');
   assert.equal(result.payload.room.result.winner, 'host');
   assert.equal(result.payload.room.result.reason, 'score');
@@ -167,7 +169,22 @@ try {
   const finalState = await api(`/matches/${code}`);
   assert.equal(finalState.body.room.state, 'finished');
   assert.equal(finalState.body.room.result.winner, 'host');
-  console.log(`Integration passed: ${code} completed over two real WebSockets.`);
+
+  host.send('rematch_vote', 3);
+  guest.send('rematch_vote', 2);
+  const rematchCountdown = await host.next('countdown');
+  await guest.next('countdown');
+  console.log('Round two countdown received.');
+  assert.equal(rematchCountdown.payload.round, 2);
+  assert.notEqual(rematchCountdown.payload.seed, countdown.payload.seed);
+
+  guest.send('leave', 3);
+  const forfeit = await host.next('result');
+  console.log('Round two forfeit received.');
+  assert.equal(forfeit.payload.room.state, 'forfeit');
+  assert.equal(forfeit.payload.room.result.winner, 'host');
+  assert.equal(forfeit.payload.room.result.reason, 'left');
+  console.log(`Integration passed: ${code} completed, rematched, and forfeited over two real WebSockets.`);
 } finally {
   host?.socket.close();
   guest?.socket.close();

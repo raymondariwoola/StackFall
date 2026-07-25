@@ -28,7 +28,8 @@ StackFall/
 │   ├── haptics.js        # Vibration API
 │   ├── storage.js        # localStorage (best/scores/name/mute)
 │   ├── multiplayer.js    # Duel HTTP/WebSocket session + reconnect client
-│   ├── duel-ui.js        # challenge-link, code-entry, and lobby presentation
+│   ├── duel-gameplay.js  # pure Duel progress/countdown/result helpers
+│   ├── duel-ui.js        # challenge, lobby, live HUD, and result presentation
 │   ├── ui.js             # HUD + overlay DOM
 │   └── leaderboard.js    # Worker client (set WORKER_URL here)
 ├── shared/               # versioned browser/Worker multiplayer contracts
@@ -86,10 +87,11 @@ npm run test:integration
 
 The integration client creates and joins a room, opens both WebSockets, reclaims
 the host seat as a refreshed client, rejects ticket replay, completes a match,
-and verifies the result. It targets `http://127.0.0.1:8788` by default; override
-that with `STACKFALL_WORKER_URL` when deliberately testing another environment.
+starts a new-seed rematch, and verifies a countdown forfeit. It targets
+`http://127.0.0.1:8788` by default; override that with
+`STACKFALL_WORKER_URL` when deliberately testing another environment.
 
-### Try the Duel lobby locally
+### Try a live Duel locally
 
 Start the Worker as above, then serve the static game from the repository root:
 
@@ -103,8 +105,10 @@ On localhost only, the Duel client automatically uses
 Choose **Challenge a Friend**, then open the generated link in another tab or
 choose **Join Duel** and enter its code. Each tab keeps only its own private seat
 capability in `sessionStorage`, so a refresh can reclaim that seat without an
-account. Phase 2 currently ends at the synchronized Ready/countdown handoff;
-Phase 3 connects that handoff to live gameplay.
+account. Ready up in both tabs: they receive the same seed and server-time
+countdown, then play independently while the compact race HUD updates after
+each landing. Finish both towers to see the authoritative result, vote for a
+rematch from both result panels, or use **Forfeit** during a live round.
 
 ---
 
@@ -223,7 +227,7 @@ and stores the top 50 per board in the serialized `Leaderboard` Durable Object.
 KV remains the rate-limit store and automatic leaderboard fallback.
 
 Multiplayer capabilities are bearer secrets and are never returned by the
-public room-state route. The future browser client stores its own capability in
+public room-state route. The browser client stores its own capability in
 `sessionStorage`, exchanges it for a 60-second one-use socket ticket, and puts
 only that ticket in the WebSocket URL. Room codes use eight human-safe
 characters displayed as `XXXX-XXXX`; the first guest claims the only open seat.

@@ -8,10 +8,11 @@ import { Cheats } from './cheats.js';
 import { verifyCheat } from './leaderboard.js';
 
 export class CheatMenu {
-  constructor({ game, onOpen, onClose }){
+  constructor({ game, onOpen, onClose, canOpen }){
     this.game = game;
     this.onOpen = onOpen || (() => {});
     this.onClose = onClose || (() => {});
+    this.canOpen = canOpen || (() => true);
 
     this.overlay = document.getElementById('cheat-overlay');
     this.lockView = document.getElementById('cheat-lock');
@@ -110,6 +111,7 @@ export class CheatMenu {
   }
 
   open(){
+    if (!this.canOpen()) return;
     this.overlay.classList.add('show');
     this.onOpen();
     if (Cheats.unlocked){

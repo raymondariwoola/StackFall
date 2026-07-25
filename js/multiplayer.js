@@ -300,6 +300,10 @@ export class MultiplayerClient {
   }
 
   ready(){ return this.send('ready'); }
+  progress(payload){ return this.send('progress', payload); }
+  finish(payload){ return this.send('finish', payload); }
+  rematch(){ return this.send('rematch_vote'); }
+  forfeit(){ return this.send('leave'); }
 
   async leave(){
     const code = this.code;

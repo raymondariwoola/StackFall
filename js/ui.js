@@ -279,7 +279,8 @@ export class UI {
           const when = new Date(r.ts || Date.now());
           const date = `${when.getMonth() + 1}/${when.getDate()}`;
           const hc = r.difficulty === 'hardcore';
-          const modeLabel = r.mode === 'daily' ? 'Daily' : r.mode === 'practice' ? 'Practice' : 'Endless';
+          const modeLabel = r.mode === 'daily' ? 'Daily'
+            : r.mode === 'practice' ? 'Practice' : r.mode === 'duel' ? 'Duel' : 'Endless';
           const tags = `${modeLabel} · ${hc ? 'Hardcore' : 'Normal'} · ${date}`;
           return `<div class="lb-row${hc ? ' hardcore' : ''}"><span>${r.score} pts<div class="meta">${tags}</div></span><span>${r.floors}f</span></div>`;
         }).join('')

@@ -470,7 +470,7 @@ WhatsApp destination remains a short real-device confirmation once Phases 2–3
 are deployed together; the native share invocation and non-share fallbacks are
 implemented and browser-tested.
 
-### Phase 3 — Live Duel Gameplay (MVP)
+### Phase 3 — Live Duel Gameplay (MVP) — ✅ Complete locally (2026-07-25)
 
 Goal: ship an enjoyable one-round live duel.
 
@@ -495,6 +495,53 @@ Acceptance gate:
 - single-player modes and leaderboard submission still work.
 
 **MVP is complete at the end of Phase 3.**
+
+Phase 3 result:
+
+- server time is included in each countdown and the browser schedules the local
+  start against a measured clock offset; the server seed, difficulty, room,
+  seat, and round are frozen into Duel's `RunContext`;
+- `js/duel-gameplay.js` provides the tested game/protocol boundary, normalized
+  landing/final progress, seat-relative results, countdown display, and the
+  conservative early “win secured” rule;
+- the live HUD shows both scores/floors, opponent-finished state, and reconnect
+  state without intercepting tower input; progress is sent only after resolved
+  landings, never per frame;
+- active Duel rounds clear and disable cheats, Pause, Settings, and automatic
+  background pausing while leaving sound and local controls responsive;
+- game over sends final stats, waits for the server-owned result, and supports
+  win/loss/draw/cheat/disconnect/leave explanations, two-sided rematch voting,
+  and an explicit in-game forfeit;
+- Duel runs appear as labelled entries in the local Runs history but do not set
+  single-player records and never enter global or daily submission paths;
+- reconnect keeps an in-progress local round alive, refreshes opponent state,
+  and retries an unacknowledged local finish from the authoritative snapshot;
+- fixed a protocol defect found by the expanded integration: countdown `leave`
+  already attempted a forfeit in `MatchRoom`, but `COUNTDOWN → FORFEIT` was
+  missing from the shared transition table.
+
+Validation evidence:
+
+- root `npm test`: 43/43 syntax and behavior tests pass, including Duel
+  progress/results/countdown, local-history isolation, server clock payload,
+  countdown forfeit, disconnect grace, rematch, and all existing single-player
+  and leaderboard validation;
+- local Wrangler integration uses two real WebSockets to create/join, replace a
+  host socket, reject ticket replay, synchronize a seeded round, exchange
+  progress/finals, resolve a winner, start a new-seed rematch, and resolve a
+  countdown forfeit;
+- the Phase 2 browser flow remains the last successful end-to-end local browser
+  validation. During this Phase 3 run the available Chrome-control surface
+  blocked its cross-port request to local Wrangler (`ERR_BLOCKED_BY_CLIENT`),
+  while direct health/API calls and the two-WebSocket integration passed. This
+  is recorded as a test-tool limitation, not counted as browser evidence.
+
+No Worker or site deployment occurred. The code-complete MVP still needs its
+deployment acceptance pass: deploy the Worker and static client together, then
+open a WhatsApp invitation on two physical phones and verify synchronized
+Normal and Hardcore starts, background/reconnect, forfeit, result, and rematch.
+That requires the owner's explicit deploy/push approval and is the only Phase 3
+acceptance item that cannot be completed purely in the local repository.
 
 ### Phase 4 — Hardening and Cost Guardrails
 

@@ -24,6 +24,15 @@ import { evaluateAchievements } from './achievements.js';
 import { RunContext, RUN_MODES } from './run-context.js';
 import { DuelUI, duelErrorText } from './duel-ui.js';
 import {
+  EMPTY_DUEL_PROGRESS,
+  countdownValue,
+  duelProgress,
+  estimateServerOffset,
+  hasSecuredWin,
+  opponentSeat,
+  progressFromGame,
+} from './duel-gameplay.js';
+import {
   MultiplayerClient,
   buildChallengeUrl,
   challengeCodeFromUrl,
@@ -97,6 +106,189 @@ function clearModal(){
 let duelOpen = false;
 let leavingDuel = false;
 let pendingChallenge = challengeCodeFromUrl(location.href);
+let duelRetry = null;
+let duelRound = null;
+let duelServerOffset = 0;
+let duelClockProbeAt = 0;
+let duelClockSynced = false;
+let duelStartTimer = null;
+let duelCountdownTimer = null;
+
+function clearDuelTimers(){
+  clearTimeout(duelStartTimer);
+  clearInterval(duelCountdownTimer);
+  duelStartTimer = null;
+  duelCountdownTimer = null;
+}
+
+function probeDuelClock(){
+  duelClockProbeAt = Date.now();
+  multiplayer.send('heartbeat');
+}
+
+function duelOpponent(room = multiplayer.room){
+  const session = duelSession();
+  const other = session && opponentSeat(session.seat);
+  return other && room && room.seats ? room.seats[other] : null;
+}
+
+function setDuelControls(active){
+  document.documentElement.classList.toggle('duel-active', active);
+  ui.settingsBtn.hidden = active;
+  ui.setPauseButtonVisible(false);
+  if (active){
+    cheatMenu.close();
+    ui.hidePause();
+    ui.hideSettings();
+    paused = false;
+    Cheats.reset();
+  }
+}
+
+function renderDuelHud(ownProgress = duelRound && duelRound.progress || EMPTY_DUEL_PROGRESS){
+  if (!duelRound) return;
+  const room = multiplayer.room;
+  const opponent = duelOpponent(room);
+  duelUI.showHud({
+    own: ownProgress,
+    opponent: opponent && opponent.progress || duelRound.opponentProgress || EMPTY_DUEL_PROGRESS,
+    opponentName: opponent && opponent.name || 'Opponent',
+    connection: multiplayer.connection,
+    ownFinished: duelRound.finished,
+    opponentFinished: !!(opponent && opponent.finished) || duelRound.opponentFinished,
+  });
+}
+
+function recordDuelRun(progress){
+  if (!duelRound || duelRound.recorded) return;
+  duelRound.recorded = true;
+  Storage.addRun({
+    score: progress.score,
+    floors: progress.floors,
+    mode: RUN_MODES.DUEL,
+    difficulty: duelRound.difficulty,
+    streak: progress.maxCombo,
+  });
+  updateStats();
+}
+
+function prepareDuelRound(payload){
+  const session = duelSession();
+  if (!session) return;
+  clearDuelTimers();
+  if (!duelClockSynced && Number.isFinite(payload.serverTime)){
+    // Fallback for an unusually delayed/missing heartbeat response. The normal
+    // path below uses the request midpoint and removes almost all clock skew.
+    duelServerOffset = payload.serverTime - Date.now();
+  }
+  const opponent = duelOpponent();
+  duelRound = {
+    code: multiplayer.code,
+    seat: session.seat,
+    round: payload.round,
+    seed: payload.seed,
+    startAt: payload.startAt,
+    difficulty: payload.difficulty === 'hardcore' ? 'hardcore' : 'normal',
+    progress: { ...EMPTY_DUEL_PROGRESS },
+    opponentProgress: duelProgress(opponent && opponent.progress),
+    opponentFinished: false,
+    started: false,
+    finished: false,
+    finishSent: false,
+    recorded: false,
+    winSecured: false,
+  };
+  setDuelControls(true);
+  duelOpen = false;
+  duelUI.hide();
+  ui.hideOverlay();
+  clearModal();
+
+  const updateCountdown = () => duelUI.showCountdown(
+    countdownValue(duelRound.startAt, duelServerOffset),
+  );
+  updateCountdown();
+  duelCountdownTimer = setInterval(updateCountdown, 100);
+  const delay = Math.max(0, payload.startAt - (Date.now() + duelServerOffset));
+  duelStartTimer = setTimeout(startPreparedDuel, delay);
+  announce(`Round ${payload.round}. Duel countdown started.`);
+}
+
+function startPreparedDuel(){
+  if (!duelRound || duelRound.started) return;
+  clearDuelTimers();
+  duelRound.started = true;
+  duelUI.hideCountdown();
+  audio.init();
+  audio.resume();
+  runContext.complete();
+  const activeRun = runContext.begin(duelRound.seed, {
+    mode: RUN_MODES.DUEL,
+    difficulty: duelRound.difficulty,
+    duel: { code: duelRound.code, seat: duelRound.seat, round: duelRound.round },
+  });
+  Difficulty.set(activeRun.difficulty);
+  Cheats.reset();
+  cheatMenu.syncControls();
+  cheatMenu.updateBadge();
+  ui.setScore(0);
+  ui.setCombo(0);
+  ui.setPracticeBadge(false);
+  ui.setSubmitResult(null);
+  background.setWorld(worldFor(0));
+  game.reset(activeRun.seed);
+  renderDuelHud();
+  announce(`Go. Round ${duelRound.round} started.`);
+}
+
+function finishDuelLocally(progress){
+  if (!duelRound || duelRound.finished) return;
+  duelRound.finished = true;
+  duelRound.progress = duelProgress(progress);
+  recordDuelRun(duelRound.progress);
+  renderDuelHud();
+  sendDuelFinish();
+}
+
+function sendDuelFinish(){
+  if (!duelRound || !duelRound.finished || duelRound.finishSent) return;
+  try {
+    multiplayer.finish(duelRound.progress);
+    duelRound.finishSent = true;
+  } catch (error){
+    announce('Finished locally. Reconnecting to report your result.');
+  }
+}
+
+function showDuelResult(room){
+  const session = duelSession();
+  if (!session) return;
+  clearDuelTimers();
+  if (duelRound && !duelRound.recorded) recordDuelRun(duelRound.progress);
+  if (game.running) game.running = false;
+  runContext.complete();
+  duelUI.hideCountdown();
+  duelUI.hideHud();
+  setDuelControls(false);
+  showDuelLayer();
+  const model = duelUI.showResult(room, session);
+  focusDuel(duelUI.rematchBtn);
+  announce(`${model.title} ${model.detail}`);
+}
+
+function resetDuelToTitle(){
+  clearDuelTimers();
+  duelRound = null;
+  duelUI.hideCountdown();
+  duelUI.hideHud();
+  setDuelControls(false);
+  runContext.complete();
+  game.buildDemo();
+  ui.showStart();
+  ui.setScore(0);
+  ui.setCombo(0);
+  updateStats();
+}
 
 function duelSession(){
   const code = multiplayer.code || challengeCodeFromUrl(location.href);
@@ -117,6 +309,7 @@ function showDuelLayer({ push = false } = {}){
 
 function closeDuelLayer(){
   duelOpen = false;
+  duelRetry = null;
   duelUI.hide();
   multiplayer.disconnect();
   ui.overlay.removeAttribute('aria-hidden');
@@ -136,8 +329,9 @@ function openJoinDuel(code = '', { push = true, error = '' } = {}){
   focusDuel(code ? duelUI.nameInput : duelUI.codeInput);
 }
 
-function showDuelError(error, action = 'Try Again'){
+function showDuelError(error, action = 'Try Again', retry = null){
   const code = error && error.code || error || 'network_error';
+  duelRetry = retry;
   showDuelLayer();
   duelUI.showError(code, { action });
   focusDuel(duelUI.errorAction);
@@ -183,7 +377,7 @@ async function createChallenge(){
     duelUI.showLobby(room, session, 'connecting');
     await connectLobby(session.code);
   } catch (error){
-    if (duelOpen) showDuelError(error);
+    if (duelOpen) showDuelError(error, 'Try Again', createChallenge);
   }
 }
 
@@ -276,12 +470,21 @@ async function shareChallenge(){
 
 duelUI.setCallbacks({
   close: () => {
+    if (duelRound){
+      if (multiplayer.room && ['finished', 'forfeit'].includes(multiplayer.room.state)){
+        duelUI.callbacks.resultExit?.();
+        return;
+      }
+      multiplayer.forfeit();
+      return;
+    }
     if (history.state?.stackfallDuel) history.back();
     else closeDuelLayer();
   },
   join: joinChallenge,
   ready: () => {
     try {
+      probeDuelClock();
       multiplayer.ready();
       const session = duelSession();
       if (session && multiplayer.room && multiplayer.room.seats[session.seat]){
@@ -304,7 +507,43 @@ duelUI.setCallbacks({
       leavingDuel = false;
     }
   },
+  forfeit: () => {
+    if (!duelRound) return;
+    duelUI.forfeitBtn.disabled = true;
+    duelUI.liveState.textContent = 'FORFEITING';
+    try { multiplayer.forfeit(); }
+    catch (error){
+      duelUI.forfeitBtn.disabled = false;
+      renderDuelHud();
+    }
+  },
+  rematch: () => {
+    if (!multiplayer.room || !duelSession()) return;
+    try {
+      probeDuelClock();
+      multiplayer.rematch();
+      const seat = duelSession().seat;
+      multiplayer.room.seats[seat].rematch = true;
+      duelUI.showResult(multiplayer.room, duelSession());
+    } catch (error){ showDuelError(error, 'Reconnect'); }
+  },
+  resultExit: async () => {
+    leavingDuel = true;
+    try { await multiplayer.leave(); }
+    finally {
+      leavingDuel = false;
+      resetDuelToTitle();
+      if (history.state?.stackfallDuel) history.back();
+      else closeDuelLayer();
+    }
+  },
   retry: () => {
+    if (duelRetry){
+      const retry = duelRetry;
+      duelRetry = null;
+      retry();
+      return;
+    }
     if (duelUI.errorCode === 'room_cancelled'){
       if (history.state?.stackfallDuel) history.back();
       else closeDuelLayer();
@@ -321,19 +560,32 @@ duelUI.setCallbacks({
   },
 });
 
-for (const type of ['snapshot', 'player_joined', 'presence', 'result']){
+for (const type of ['snapshot', 'player_joined', 'presence']){
   multiplayer.on(type, (payload) => {
-    if (!duelOpen || !payload.room) return;
+    if (!payload.room) return;
     if (payload.room.state === 'cancelled'){
       multiplayer.clearSession(payload.room.code);
-      if (!leavingDuel) showDuelError('room_cancelled', 'Back to Title');
-    } else {
+      if (!leavingDuel && duelOpen) showDuelError('room_cancelled', 'Back to Title');
+    } else if (duelRound && ['finished', 'forfeit'].includes(payload.room.state)){
+      showDuelResult(payload.room);
+    } else if (duelRound && (payload.room.state === 'countdown' || payload.room.state === 'playing')){
+      const own = payload.room.seats && payload.room.seats[duelRound.seat];
+      if (own && own.finished) duelRound.finishSent = true;
+      else if (type === 'snapshot' && duelRound.finished){
+        duelRound.finishSent = false;
+        sendDuelFinish();
+      }
+      const opponent = duelOpponent(payload.room);
+      duelRound.opponentProgress = duelProgress(opponent && opponent.progress);
+      duelRound.opponentFinished = !!(opponent && opponent.finished);
+      renderDuelHud();
+    } else if (duelOpen) {
       showCurrentLobby(payload.room);
     }
   });
 }
 multiplayer.on('countdown', (payload) => {
-  if (!duelOpen || !multiplayer.room) return;
+  if (!multiplayer.room) return;
   const room = {
     ...multiplayer.room,
     state: 'countdown',
@@ -341,28 +593,84 @@ multiplayer.on('countdown', (payload) => {
     startAt: payload.startAt,
     round: payload.round,
     seats: {
-      host: { ...multiplayer.room.seats.host, ready: true },
-      guest: { ...multiplayer.room.seats.guest, ready: true },
+      host: {
+        ...multiplayer.room.seats.host, ready: true, progress: { ...EMPTY_DUEL_PROGRESS },
+        finished: false, forfeited: false, rematch: false,
+      },
+      guest: {
+        ...multiplayer.room.seats.guest, ready: true, progress: { ...EMPTY_DUEL_PROGRESS },
+        finished: false, forfeited: false, rematch: false,
+      },
     },
+    result: null,
   };
   multiplayer.room = room;
-  showCurrentLobby(room);
-  announce('Both players are ready. Duel countdown synchronized.');
+  prepareDuelRound(payload);
+});
+multiplayer.on('presence', (payload) => {
+  if (!duelClockProbeAt || !Number.isFinite(payload.serverTime)) return;
+  const receivedAt = Date.now();
+  duelServerOffset = estimateServerOffset(payload.serverTime, duelClockProbeAt, receivedAt);
+  duelClockProbeAt = 0;
+  duelClockSynced = true;
+});
+multiplayer.on('opponent_progress', (payload) => {
+  if (!duelRound) return;
+  duelRound.opponentProgress = duelProgress(payload.progress);
+  const opponent = duelOpponent();
+  if (opponent) opponent.progress = duelRound.opponentProgress;
+  renderDuelHud();
+  if (hasSecuredWin(duelRound.progress, duelRound.opponentProgress, duelRound.opponentFinished) && !duelRound.winSecured){
+    duelRound.winSecured = true;
+    announce('Win secured. Your score is already beyond your opponent’s final score.');
+  }
+});
+multiplayer.on('opponent_finished', (payload) => {
+  if (!duelRound) return;
+  duelRound.opponentFinished = true;
+  duelRound.opponentProgress = duelProgress(payload.progress);
+  const opponent = duelOpponent();
+  if (opponent){ opponent.progress = duelRound.opponentProgress; opponent.finished = true; }
+  renderDuelHud();
+  announce('Your opponent finished their tower.');
+  if (hasSecuredWin(duelRound.progress, duelRound.opponentProgress, true) && !duelRound.winSecured){
+    duelRound.winSecured = true;
+    announce('Win secured. Your score is already beyond their final score.');
+  }
+});
+multiplayer.on('result', (payload) => {
+  if (!payload.room || leavingDuel) return;
+  showDuelResult(payload.room);
 });
 multiplayer.on('expired', () => {
   if (duelOpen) showDuelError('room_not_found', 'Enter Another Code');
 });
 multiplayer.on('error', (payload) => {
-  if (duelOpen) showDuelError(payload.code, payload.code === 'socket_replaced' ? 'Enter Another Code' : 'Try Again');
+  if (duelRound){
+    if (!['duplicate_sequence', 'not_playing'].includes(payload.code)) announce(`Duel update: ${duelErrorText(payload.code)}`);
+  } else if (duelOpen) showDuelError(payload.code, payload.code === 'socket_replaced' ? 'Enter Another Code' : 'Try Again');
 });
 multiplayer.on('transport_error', ({ error }) => {
-  if (duelOpen && multiplayer.connection !== 'reconnecting') showDuelError(error, 'Reconnect');
+  if (duelRound) renderDuelHud();
+  else if (duelOpen && multiplayer.connection !== 'reconnecting') showDuelError(error, 'Reconnect');
 });
 multiplayer.on('connection', ({ connection }) => {
-  if (duelOpen && multiplayer.room && duelSession()) duelUI.setConnection(connection);
+  if (duelRound){
+    renderDuelHud();
+    if (connection === 'connected') sendDuelFinish();
+  }
+  else if (duelOpen && multiplayer.room && duelSession()) duelUI.setConnection(connection);
 });
 
 window.addEventListener('popstate', () => {
+  if (duelRound){
+    if (multiplayer.room && ['finished', 'forfeit'].includes(multiplayer.room.state)){
+      duelUI.callbacks.resultExit?.();
+      return;
+    }
+    try { multiplayer.forfeit(); } catch (error) { /* disconnect grace remains the fallback */ }
+    return;
+  }
   if (history.state?.stackfallDuel){
     const code = challengeCodeFromUrl(location.href);
     if (code) recoverChallenge(code, { normalizeHistory: false });
@@ -380,9 +688,28 @@ window.addEventListener('online', () => {
 const game = new Game({
   view, effects, audio, haptics: Haptics, rng,
   callbacks: {
+    onProgress: (progress) => {
+      if (!duelRound || !duelRound.started || duelRound.finished) return;
+      duelRound.progress = duelProgress(progress);
+      renderDuelHud(duelRound.progress);
+      try { multiplayer.progress(duelRound.progress); } catch (error) { /* final payload catches up after reconnect */ }
+      if (hasSecuredWin(duelRound.progress, duelRound.opponentProgress, duelRound.opponentFinished) && !duelRound.winSecured){
+        duelRound.winSecured = true;
+        announce('Win secured. Keep stacking for your final score.');
+      }
+    },
     onScore: (s, combo) => { ui.setScore(s); ui.setCombo(combo); ui.pulseScore(); checkAchievements(); },
     onWorld: (world) => { background.setWorld(world); },
     onGameOver: (score, floors, cheated, maxCombo) => {
+      if (runContext.active && runContext.active.mode === RUN_MODES.DUEL){
+        runContext.complete();
+        finishDuelLocally(progressFromGame(game));
+        paused = false;
+        ui.hidePause();
+        ui.setPauseButtonVisible(false);
+        announce(`Tower finished. ${score} points, ${floors} floors. Waiting for the duel result.`);
+        return;
+      }
       // Capture the mode/difficulty the run was actually played in — the toggles
       // may change afterwards, so the captured values (not the live ones) are
       // authoritative for submission, board refresh, history, and share.
@@ -463,6 +790,7 @@ const cheatMenu = new CheatMenu({
   game,
   onOpen: () => { game.paused = true; },
   onClose: () => { game.paused = paused; },
+  canOpen: () => !duelOpen && !duelRound,
 });
 
 // Share the last run: a Canvas-rendered result card via the Web Share API when
@@ -760,6 +1088,7 @@ async function start(){
 
 // ---------- Pause ----------
 function pauseGame(){
+  if (duelRound && duelRound.started) return;
   if (!game.running || paused) return;
   paused = true;
   game.paused = true;
@@ -779,7 +1108,7 @@ function resumeGame(){
 // Auto-pause when the tab/app is backgrounded so switching away can't cost a
 // miss. Stays paused on return until the player taps — no surprise drop.
 document.addEventListener('visibilitychange', () => {
-  if (document.hidden) pauseGame();
+  if (document.hidden && !duelRound) pauseGame();
 });
 
 // ---------- Input ----------
@@ -822,6 +1151,7 @@ window.addEventListener('keydown', (e) => {
     return;
   }
   if (e.code === 'KeyP' && game.running){
+    if (duelRound) return;
     // P toggles pause during a run — a keyboard alternative to the button.
     e.preventDefault();
     paused ? resumeGame() : pauseGame();
@@ -908,6 +1238,7 @@ ui.tutorialOverlay.addEventListener('pointerdown', (e) => e.stopPropagation());
 
 // ---------- Settings overlay ----------
 function openSettings(){
+  if (duelRound) return;
   ui.syncSettings({
     highContrast: Storage.highContrast(),
     reducedMotion: Storage.reducedMotion(),

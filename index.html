@@ -34,6 +34,24 @@
     <div id="best-chip">Best: 0</div>
   </div>
 
+  <!-- Lightweight live-race information. It never intercepts tower input. -->
+  <div id="duel-hud" hidden aria-label="Live Duel status">
+    <div class="duel-hud-player me">
+      <span>You</span><strong id="duel-my-score">0</strong><small id="duel-my-floors">0 floors</small>
+    </div>
+    <div class="duel-hud-center">
+      <span id="duel-live-state">LIVE</span>
+      <button id="duel-forfeit" type="button">Forfeit</button>
+    </div>
+    <div class="duel-hud-player opponent">
+      <span id="duel-opponent-name">Opponent</span><strong id="duel-opponent-score">0</strong><small id="duel-opponent-floors">0 floors</small>
+    </div>
+  </div>
+  <div id="duel-countdown" hidden aria-live="assertive" aria-atomic="true">
+    <span id="duel-countdown-value">3</span>
+    <small>Same seed. Same start.</small>
+  </div>
+
   <div id="restart-hint">Press Retry to play again</div>
 
   <div id="overlay" class="show">
@@ -119,6 +137,19 @@
         <div class="duel-error-mark" aria-hidden="true">!</div>
         <p id="duel-error-copy">This room is unavailable.</p>
         <button id="duel-error-action" class="duel-primary" type="button">Try Again</button>
+      </div>
+
+      <div id="duel-result-view" class="duel-view" hidden>
+        <div id="duel-result-mark" class="duel-result-mark" aria-hidden="true">★</div>
+        <p id="duel-result-copy" class="duel-result-copy"></p>
+        <div class="duel-result-scores" aria-label="Final scores">
+          <div><span id="duel-result-my-name">You</span><strong id="duel-result-my-score">0</strong><small id="duel-result-my-floors">0 floors</small></div>
+          <b>VS</b>
+          <div><span id="duel-result-opponent-name">Opponent</span><strong id="duel-result-opponent-score">0</strong><small id="duel-result-opponent-floors">0 floors</small></div>
+        </div>
+        <button id="duel-rematch" class="duel-primary" type="button">Play Again</button>
+        <div id="duel-rematch-note" class="duel-lobby-note">Both players must choose Play Again.</div>
+        <button id="duel-result-exit" class="duel-text-btn" type="button">Back to title</button>
       </div>
 
       <div id="duel-busy" class="duel-busy" hidden aria-hidden="true"><span></span><span></span><span></span></div>

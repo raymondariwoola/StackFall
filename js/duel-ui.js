@@ -1,4 +1,5 @@
 import { cleanDuelName, formatRoomCode, isValidRoomCode, normalizeRoomCode } from '../shared/duel-protocol.js';
+import { resultModel } from './duel-gameplay.js';
 
 export const DUEL_ERROR_COPY = Object.freeze({
   bad_code: 'That challenge code is not valid. Check all eight characters and try again.',
@@ -89,7 +90,29 @@ export class DuelUI {
     this.errorView = root.querySelector('#duel-error-view');
     this.errorCopy = root.querySelector('#duel-error-copy');
     this.errorAction = root.querySelector('#duel-error-action');
+    this.resultView = root.querySelector('#duel-result-view');
+    this.resultMark = root.querySelector('#duel-result-mark');
+    this.resultCopy = root.querySelector('#duel-result-copy');
+    this.resultMyName = root.querySelector('#duel-result-my-name');
+    this.resultMyScore = root.querySelector('#duel-result-my-score');
+    this.resultMyFloors = root.querySelector('#duel-result-my-floors');
+    this.resultOpponentName = root.querySelector('#duel-result-opponent-name');
+    this.resultOpponentScore = root.querySelector('#duel-result-opponent-score');
+    this.resultOpponentFloors = root.querySelector('#duel-result-opponent-floors');
+    this.rematchBtn = root.querySelector('#duel-rematch');
+    this.rematchNote = root.querySelector('#duel-rematch-note');
+    this.resultExitBtn = root.querySelector('#duel-result-exit');
     this.busy = root.querySelector('#duel-busy');
+    this.hud = document.getElementById('duel-hud');
+    this.myScore = document.getElementById('duel-my-score');
+    this.myFloors = document.getElementById('duel-my-floors');
+    this.opponentName = document.getElementById('duel-opponent-name');
+    this.opponentScore = document.getElementById('duel-opponent-score');
+    this.opponentFloors = document.getElementById('duel-opponent-floors');
+    this.liveState = document.getElementById('duel-live-state');
+    this.forfeitBtn = document.getElementById('duel-forfeit');
+    this.countdown = document.getElementById('duel-countdown');
+    this.countdownValue = document.getElementById('duel-countdown-value');
     this.callbacks = {};
     this.room = null;
     this.session = null;
@@ -115,6 +138,12 @@ export class DuelUI {
     this.readyBtn.addEventListener('click', () => this.callbacks.ready?.());
     this.leaveBtn.addEventListener('click', () => this.callbacks.leave?.());
     this.errorAction.addEventListener('click', () => this.callbacks.retry?.());
+    this.rematchBtn.addEventListener('click', () => this.callbacks.rematch?.());
+    this.resultExitBtn.addEventListener('click', () => this.callbacks.resultExit?.());
+    this.forfeitBtn.addEventListener('click', (event) => {
+      event.stopPropagation();
+      this.callbacks.forfeit?.();
+    });
     this.root.addEventListener('pointerdown', (event) => {
       event.stopPropagation();
       if (event.target === this.root) this.callbacks.close?.();
@@ -127,6 +156,7 @@ export class DuelUI {
     this.joinView.hidden = name !== 'join';
     this.lobbyView.hidden = name !== 'lobby';
     this.errorView.hidden = name !== 'error';
+    this.resultView.hidden = name !== 'result';
     this.busy.hidden = name !== 'busy';
   }
 
@@ -179,6 +209,55 @@ export class DuelUI {
 
   setConnection(connection){
     if (this.room && this.session) this.showLobby(this.room, this.session, connection);
+  }
+
+  showCountdown(value){
+    this.countdownValue.textContent = value;
+    this.countdown.hidden = false;
+  }
+
+  hideCountdown(){ this.countdown.hidden = true; }
+
+  showHud({ own, opponent, opponentName = 'Opponent', connection = 'connected', ownFinished = false, opponentFinished = false }){
+    this.myScore.textContent = String(own.score || 0);
+    this.myFloors.textContent = `${own.floors || 0} floors`;
+    this.opponentName.textContent = opponentName;
+    this.opponentScore.textContent = String(opponent.score || 0);
+    this.opponentFloors.textContent = `${opponent.floors || 0} floors`;
+    this.liveState.textContent = connection === 'connected'
+      ? ownFinished ? 'FINISHED' : opponentFinished ? 'THEY FINISHED' : 'LIVE'
+      : 'RECONNECTING';
+    this.forfeitBtn.disabled = false;
+    this.hud.hidden = false;
+  }
+
+  hideHud(){ this.hud.hidden = true; }
+
+  showResult(room, session){
+    const model = resultModel(room, session.seat);
+    this.room = room;
+    this.session = session;
+    this._view('result');
+    this.title.textContent = model.title;
+    this.status.textContent = `Round ${room.round} complete`;
+    this.resultView.dataset.tone = model.tone;
+    this.resultMark.textContent = model.tone === 'win' ? '★' : model.tone === 'loss' ? '×' : '=';
+    this.resultCopy.textContent = model.detail;
+    this.resultMyName.textContent = 'You';
+    this.resultMyScore.textContent = String(model.ownProgress.score);
+    this.resultMyFloors.textContent = `${model.ownProgress.floors} floors`;
+    this.resultOpponentName.textContent = model.opponentName;
+    this.resultOpponentScore.textContent = String(model.opponentProgress.score);
+    this.resultOpponentFloors.textContent = `${model.opponentProgress.floors} floors`;
+    this.rematchBtn.disabled = model.ownRematch;
+    this.rematchBtn.textContent = model.ownRematch ? 'Rematch Requested ✓' : 'Play Again';
+    this.rematchNote.textContent = model.opponentRematch
+      ? `${model.opponentName} wants a rematch.`
+      : model.ownRematch
+        ? `Waiting for ${model.opponentName}…`
+        : 'Both players must choose Play Again.';
+    this.show();
+    return model;
   }
 
   showError(code, { action = 'Try Again' } = {}){

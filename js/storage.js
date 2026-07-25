@@ -88,11 +88,13 @@ export const Storage = {
     catch (e) { return []; }
   },
   // record: { score, floors, mode, difficulty, streak }
-  // Practice runs are recorded in history (labelled) but never set a record.
+  // Practice and Duel runs are recorded in history (labelled) but never set a
+  // single-player record or enter a leaderboard submission path.
   addRun(record){
     const score = Math.max(0, Math.floor(Number(record.score) || 0));
     const mode = record.mode === 'daily' ? 'daily'
-      : record.mode === 'practice' ? 'practice' : 'endless';
+      : record.mode === 'practice' ? 'practice'
+        : record.mode === 'duel' ? 'duel' : 'endless';
     const run = {
       score,
       floors: Math.max(0, Math.floor(Number(record.floors) || 0)),
@@ -106,7 +108,7 @@ export const Storage = {
     safeSet(RUNS_KEY, JSON.stringify(list.slice(0, RUNS_MAX)));
 
     // Practice is consequence-free: it appears in history but sets no records.
-    if (mode !== 'practice'){
+    if (mode !== 'practice' && mode !== 'duel'){
       const bd = this.bestByDifficulty();
       if (score > (bd[run.difficulty] || 0)){
         bd[run.difficulty] = score;
