@@ -25,6 +25,10 @@ class_name = "Leaderboard"
 name = "MATCH_ROOM"
 class_name = "MatchRoom"
 
+[[durable_objects.bindings]]
+name = "CHALLENGE_ROOM"
+class_name = "ChallengeRoom"
+
 [[migrations]]
 tag = "v1"
 new_sqlite_classes = ["Leaderboard"]
@@ -32,6 +36,10 @@ new_sqlite_classes = ["Leaderboard"]
 [[migrations]]
 tag = "v2"
 new_sqlite_classes = ["MatchRoom"]
+
+[[migrations]]
+tag = "v3"
+new_sqlite_classes = ["ChallengeRoom"]
 
 # --- Tunables (safe to leave as-is) ------------------------------------------
 [vars]

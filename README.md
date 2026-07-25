@@ -28,6 +28,7 @@ StackFall/
 │   ├── haptics.js        # Vibration API
 │   ├── storage.js        # localStorage (best/scores/name/mute)
 │   ├── multiplayer.js    # Duel HTTP/WebSocket session + reconnect client
+│   ├── beat-challenge.js # asynchronous seeded challenge client
 │   ├── duel-gameplay.js  # pure Duel progress/countdown/result helpers
 │   ├── duel-ui.js        # challenge, lobby, live HUD, and result presentation
 │   ├── ui.js             # HUD + overlay DOM
@@ -39,6 +40,7 @@ StackFall/
 └── worker/               # Cloudflare Worker (boards, daily seed, Duel rooms)
     ├── src/index.js      # public router + leaderboard Durable Object
     ├── src/match-room.js # hibernating two-player room Durable Object
+    ├── src/challenge-room.js # low-traffic asynchronous challenge Durable Object
     ├── integration/      # real HTTP/WebSocket local integration client
     ├── wrangler.toml
     └── package.json
@@ -78,9 +80,10 @@ npx playwright install chromium
 npm run test:e2e
 ```
 
-That command owns both local servers, creates isolated host/guest browser
-contexts, and verifies create/join, synchronized play, forfeit, rematch, a new
-seed, mobile rotation, and result delivery. It shuts the servers down afterward.
+That command owns both local servers and runs isolated host/guest contexts for
+both modes. It verifies live create/join, synchronized play, forfeit, rematch,
+rotation and results, plus a time-separated Beat My Tower claim on the same seed.
+It shuts the servers down afterward.
 
 ### Run the real Worker integration test
 
@@ -100,7 +103,8 @@ npm run test:integration
 
 The integration client creates and joins a room, opens both WebSockets, reclaims
 the host seat as a refreshed client, rejects ticket replay, completes a match,
-starts a new-seed rematch, and verifies a countdown forfeit. It targets
+starts a new-seed rematch, verifies a countdown forfeit, and completes the
+delayed create/finish/claim/result lifecycle in the same run. It targets
 `http://127.0.0.1:8788` by default; override that with
 `STACKFALL_WORKER_URL` when deliberately testing another environment.
 
@@ -114,9 +118,9 @@ npm run dev:duel
 # open http://127.0.0.1:8137/
 ```
 
-The development server serves the static game and proxies `/matches` plus the
-WebSocket upgrade to `http://127.0.0.1:8788`. Deployed pages continue to use the
-configured Worker directly.
+The development server serves the static game and proxies `/matches`,
+`/challenges`, and the live WebSocket upgrade to `http://127.0.0.1:8788`.
+Deployed pages continue to use the configured Worker directly.
 Choose **Challenge a Friend**, then open the generated link in another tab or
 choose **Join Duel** and enter its code. Each tab keeps only its own private seat
 capability in `sessionStorage`, so a refresh can reclaim that seat without an
@@ -124,6 +128,11 @@ account. Ready up in both tabs: they receive the same seed and server-time
 countdown, then play independently while the compact race HUD updates after
 each landing. Finish both towers to see the authoritative result, vote for a
 rematch from both result panels, or use **Forfeit** during a live round.
+
+For an asynchronous challenge, choose **Beat My Tower · Play Later**, finish
+your seeded tower, then share the generated seven-day link. The first friend to
+claim it plays the same seed whenever convenient; no tab or socket needs to stay
+open while you wait.
 
 ---
 
@@ -181,8 +190,8 @@ npx wrangler deploy
 ```
 
 Wrangler also applies the committed SQLite Durable Object migrations. Migration
-`v1` owns the leaderboard and `v2` adds multiplayer rooms; no separate database
-or Cloudflare dashboard resource is required for `MatchRoom`.
+`v1` owns the leaderboard, `v2` adds live rooms, and `v3` adds delayed
+`ChallengeRoom` objects; no separate database or dashboard database is required.
 
 Wrangler prints your Worker URL, e.g.
 `https://stackfall-lb.YOURNAME.workers.dev`. Sanity-check it in a browser:
@@ -235,6 +244,11 @@ curl https://stackfall-lb.YOURNAME.workers.dev/daily
 | POST   | `/matches/:code/join`                 | claim the guest seat; returns guest capability |
 | POST   | `/matches/:code/socket-ticket`        | exchange a Bearer capability for a one-use ticket |
 | GET    | `/matches/:code/socket`               | origin-checked WebSocket upgrade; one-use ticket is a subprotocol, not a URL |
+| POST   | `/challenges`                          | create a two-hour Beat My Tower draft; returns host capability |
+| GET    | `/challenges/:code`                    | safe public delayed-challenge state |
+| POST   | `/challenges/:code/join`               | first guest claims the delayed challenge |
+| POST   | `/challenges/:code/finish`             | capability-backed one-time final result |
+| POST   | `/challenges/:code/cancel`             | host cancels an unfinished challenge |
 
 `POST /score` body: `{ name, score, day, ts }` with an `X-Sig` header (the client
 sets both automatically). The Worker sanitizes names, rejects implausible scores,
@@ -248,12 +262,20 @@ that ticket in the WebSocket protocol header rather than a logged/shared URL.
 Room codes use eight human-safe
 characters displayed as `XXXX-XXXX`; the first guest claims the only open seat.
 
+Beat My Tower uses the same safe code/name contract but its own HTTP-only room.
+The host result opens the invitation; the first guest claims it and submits one
+final. Both capabilities remain in `sessionStorage`, and the same seed is
+public to both players. An abandoned host draft expires after two hours; when
+the host finishes, the expiry resets and one alarm removes the challenge seven
+days later whether it was claimed, completed, or left open.
+
 ### Duel operations and rollback
 
 Before a production release, run `npm test`, `npm run test:e2e`, and the Worker
 integration test above. Deploy from `worker/` with `npx wrangler deploy`; the
-committed migrations are additive: `v1` creates `Leaderboard` and `v2` creates
-`MatchRoom`. Do not remove or rename either class in a routine rollback.
+committed migrations are additive: `v1` creates `Leaderboard`, `v2` creates
+`MatchRoom`, and `v3` creates `ChallengeRoom`. Do not remove or rename these
+classes in a routine rollback.
 
 Emergency multiplayer disable (single-player and leaderboards stay available):
 
@@ -286,10 +308,11 @@ SQLite-backed Durable Objects and lists 100,000 Durable Object requests/day,
 13,000 GB-s/day, 5 million rows read/day, 100,000 rows written/day, and 5 GB
 stored data. Limits can change; verify the official
 [Durable Objects pricing](https://developers.cloudflare.com/durable-objects/platform/pricing/)
-before launch. StackFall hibernates idle sockets, sends progress only on
-landings plus a 15-second heartbeat, rate-limits every entry point, and deletes
-expired room storage, so family-and-friends use should remain far below those
-allowances. The dashboard—not this estimate—is the production acceptance gate.
+before launch. StackFall hibernates idle sockets and sends live progress only on
+landings plus a 15-second heartbeat, while Beat My Tower sends only a few HTTP
+operations across seven days. Both paths are rate-limited and delete expired
+storage, so family-and-friends use should remain far below those allowances.
+The dashboard—not this estimate—is the production acceptance gate.
 
 ---
 

@@ -18,7 +18,10 @@ const TYPES = Object.freeze({
   '.svg': 'image/svg+xml',
 });
 
-function isMatchPath(url = ''){ return url === '/matches' || url.startsWith('/matches/'); }
+function isWorkerPath(url = ''){
+  return url === '/matches' || url.startsWith('/matches/') ||
+    url === '/challenges' || url.startsWith('/challenges/');
+}
 
 function proxyHttp(clientRequest, clientResponse){
   const upstream = httpRequest({
@@ -67,12 +70,12 @@ function serveStatic(request, response){
 }
 
 const server = createServer((request, response) => {
-  if (isMatchPath(request.url)) proxyHttp(request, response);
+  if (isWorkerPath(request.url)) proxyHttp(request, response);
   else serveStatic(request, response);
 });
 
 server.on('upgrade', (request, clientSocket, head) => {
-  if (!isMatchPath(request.url)){
+  if (!isWorkerPath(request.url) || request.url.startsWith('/challenges')){
     clientSocket.end('HTTP/1.1 404 Not Found\r\n\r\n');
     return;
   }

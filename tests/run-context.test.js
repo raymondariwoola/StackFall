@@ -37,6 +37,13 @@ test('RunContext cycles only title-screen modes and accepts explicit Duel metada
   assert.equal(duel.seed, 1);
   assert.deepEqual(duel.duel, { code: '7KMXR4QP', seat: 'host' });
   assert.ok(Object.isFrozen(duel.duel));
+
+  const beat = context.begin(42, {
+    mode: RUN_MODES.BEAT,
+    duel: { code: '7KMXR4QP', seat: 'guest', kind: 'beat' },
+  });
+  assert.equal(beat.mode, RUN_MODES.BEAT);
+  assert.deepEqual(beat.duel, { code: '7KMXR4QP', seat: 'guest', kind: 'beat' });
 });
 
 test('RunContext normalizes unsupported selections', () => {

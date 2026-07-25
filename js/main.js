@@ -39,6 +39,12 @@ import {
   resolveMultiplayerWorkerUrl,
   withoutChallengeUrl,
 } from './multiplayer.js';
+import {
+  BeatChallengeClient,
+  beatCodeFromUrl,
+  buildBeatUrl,
+  withoutBeatUrl,
+} from './beat-challenge.js';
 
 const canvas = document.getElementById('c');
 const ctx = canvas.getContext('2d');
@@ -51,6 +57,9 @@ const renderer = new Renderer(ctx);
 const ui = new UI();
 const duelUI = new DuelUI();
 const multiplayer = new MultiplayerClient({
+  baseUrl: resolveMultiplayerWorkerUrl(WORKER_URL, location),
+});
+const beatChallenge = new BeatChallengeClient({
   baseUrl: resolveMultiplayerWorkerUrl(WORKER_URL, location),
 });
 const rng = new RNG((Date.now() >>> 0) || 1);
@@ -106,6 +115,7 @@ function clearModal(){
 let duelOpen = false;
 let leavingDuel = false;
 let pendingChallenge = challengeCodeFromUrl(location.href);
+let pendingBeatChallenge = beatCodeFromUrl(location.href);
 let duelRetry = null;
 let duelRound = null;
 let duelServerOffset = 0;
@@ -126,8 +136,11 @@ function probeDuelClock(){
   multiplayer.send('heartbeat');
 }
 
-function duelOpponent(room = multiplayer.room){
-  const session = duelSession();
+function friendRoom(){
+  return duelRound?.kind === 'beat' ? beatChallenge.challenge : multiplayer.room;
+}
+
+function duelOpponent(room = friendRoom(), session = duelSession()){
   const other = session && opponentSeat(session.seat);
   return other && room && room.seats ? room.seats[other] : null;
 }
@@ -147,16 +160,17 @@ function setDuelControls(active){
 
 function renderDuelHud(ownProgress = duelRound && duelRound.progress || EMPTY_DUEL_PROGRESS){
   if (!duelRound) return;
-  const room = multiplayer.room;
+  const room = friendRoom();
   const opponent = duelOpponent(room);
   duelUI.showHud({
     own: ownProgress,
     opponent: opponent && opponent.progress || duelRound.opponentProgress || EMPTY_DUEL_PROGRESS,
     opponentName: opponent && opponent.name || 'Opponent',
-    connection: multiplayer.connection,
+    connection: duelRound.kind === 'beat' ? 'connected' : multiplayer.connection,
     ownFinished: duelRound.finished,
     opponentFinished: !!(opponent && opponent.finished) || duelRound.opponentFinished,
   });
+  duelUI.forfeitBtn.textContent = duelRound.kind === 'beat' ? 'Exit' : 'Forfeit';
 }
 
 function recordDuelRun(progress){
@@ -165,15 +179,15 @@ function recordDuelRun(progress){
   Storage.addRun({
     score: progress.score,
     floors: progress.floors,
-    mode: RUN_MODES.DUEL,
+    mode: duelRound.kind === 'beat' ? RUN_MODES.BEAT : RUN_MODES.DUEL,
     difficulty: duelRound.difficulty,
     streak: progress.maxCombo,
   });
   updateStats();
 }
 
-function prepareDuelRound(payload){
-  const session = duelSession();
+function prepareDuelRound(payload, suppliedSession = null){
+  const session = suppliedSession || duelSession();
   if (!session) return;
   clearDuelTimers();
   if (!duelClockSynced && Number.isFinite(payload.serverTime)){
@@ -181,16 +195,17 @@ function prepareDuelRound(payload){
     // path below uses the request midpoint and removes almost all clock skew.
     duelServerOffset = payload.serverTime - Date.now();
   }
-  const opponent = duelOpponent();
+  const opponent = payload.opponent || duelOpponent(friendRoom(), session);
   duelRound = {
-    code: multiplayer.code,
+    kind: payload.kind === 'beat' ? 'beat' : 'live',
+    code: payload.code || (payload.kind === 'beat' ? beatChallenge.code : multiplayer.code),
     seat: session.seat,
     round: payload.round,
     seed: payload.seed,
     startAt: payload.startAt,
     difficulty: payload.difficulty === 'hardcore' ? 'hardcore' : 'normal',
     progress: { ...EMPTY_DUEL_PROGRESS },
-    opponentProgress: duelProgress(opponent && opponent.progress),
+    opponentProgress: duelProgress(opponent?.progress || {}),
     opponentFinished: false,
     started: false,
     finished: false,
@@ -223,7 +238,7 @@ function startPreparedDuel(){
   audio.resume();
   runContext.complete();
   const activeRun = runContext.begin(duelRound.seed, {
-    mode: RUN_MODES.DUEL,
+    mode: duelRound.kind === 'beat' ? RUN_MODES.BEAT : RUN_MODES.DUEL,
     difficulty: duelRound.difficulty,
     duel: { code: duelRound.code, seat: duelRound.seat, round: duelRound.round },
   });
@@ -252,6 +267,21 @@ function finishDuelLocally(progress){
 
 function sendDuelFinish(){
   if (!duelRound || !duelRound.finished || duelRound.finishSent) return;
+  if (duelRound.kind === 'beat'){
+    duelRound.finishSent = true;
+    beatChallenge.finish(duelRound.progress).then((challenge) => {
+      if (!duelRound || duelRound.code !== challenge.code) return;
+      if (challenge.state === 'finished') showDuelResult(challenge);
+      else showBeatChallengeReady(challenge);
+    }).catch((error) => {
+      if (!duelRound) return;
+      duelRound.finishSent = false;
+      setDuelControls(false);
+      duelUI.hideHud();
+      showDuelError(error, 'Retry Result', sendDuelFinish);
+    });
+    return;
+  }
   try {
     multiplayer.finish(duelRound.progress);
     duelRound.finishSent = true;
@@ -272,7 +302,7 @@ function showDuelResult(room){
   setDuelControls(false);
   showDuelLayer();
   const model = duelUI.showResult(room, session);
-  focusDuel(duelUI.rematchBtn);
+  focusDuel(room.kind === 'beat' ? duelUI.resultExitBtn : duelUI.rematchBtn);
   announce(`${model.title} ${model.detail}`);
 }
 
@@ -291,6 +321,10 @@ function resetDuelToTitle(){
 }
 
 function duelSession(){
+  if (duelRound?.kind === 'beat'){
+    const code = beatChallenge.code || beatCodeFromUrl(location.href);
+    return code ? beatChallenge.session(code) : null;
+  }
   const code = multiplayer.code || challengeCodeFromUrl(location.href);
   return code ? multiplayer.session(code) : null;
 }
@@ -328,10 +362,48 @@ function putDuelInUrl(code){
   return url;
 }
 
-function openJoinDuel(code = '', { push = true, error = '' } = {}){
+function putBeatInUrl(code){
+  const url = buildBeatUrl(location.href, code);
+  history.replaceState({ ...(history.state || {}), stackfallDuel: true }, '', url);
+  return url;
+}
+
+function openJoinDuel(code = '', { push = true, error = '', kind = 'live' } = {}){
   showDuelLayer({ push });
-  duelUI.showJoin({ code, name: Storage.name(), error });
+  duelUI.showJoin({ code, name: Storage.name(), error, kind });
   focusDuel(code ? duelUI.nameInput : duelUI.codeInput);
+}
+
+function startBeatChallenge(challenge, session){
+  beatChallenge.challenge = challenge;
+  beatChallenge.code = challenge.code;
+  prepareDuelRound({
+    kind: 'beat',
+    code: challenge.code,
+    round: 1,
+    seed: challenge.seed,
+    startAt: Date.now() + 2000,
+    difficulty: challenge.difficulty,
+    opponent: session.seat === 'guest' ? challenge.seats.host : challenge.seats.guest,
+  }, session);
+}
+
+function showBeatChallengeReady(challenge = beatChallenge.challenge){
+  const session = challenge && beatChallenge.session(challenge.code);
+  if (!challenge || !session) return;
+  resetDuelToTitle();
+  showDuelLayer();
+  duelUI.showBeatReady(challenge, session);
+  focusDuel(session.seat === 'host' && challenge.state === 'open' ? duelUI.shareBtn : duelUI.leaveBtn);
+  announce(challenge.state === 'open' ? 'Challenge ready to share.' : 'Challenge status updated.');
+}
+
+function showCompletedBeat(challenge, session){
+  resetDuelToTitle();
+  showDuelLayer();
+  const model = duelUI.showResult(challenge, session);
+  focusDuel(duelUI.resultExitBtn);
+  announce(`${model.title} ${model.detail}`);
 }
 
 function showDuelError(error, action = 'Try Again', retry = null){
@@ -386,7 +458,31 @@ async function createChallenge(){
   }
 }
 
-async function joinChallenge({ code, name }){
+async function createBeatChallenge(){
+  const name = Storage.name().trim();
+  if (!name){
+    ui.updateNameGate();
+    ui.nameInput.focus();
+    announce('Enter your name before setting a challenge tower.');
+    return;
+  }
+  showDuelLayer({ push: true });
+  duelUI.showBusy('Choosing a private tower seed…');
+  focusDuel(duelUI.closeBtn);
+  try {
+    const { challenge, session } = await beatChallenge.create({
+      name, difficulty: runContext.selection.difficulty,
+    });
+    if (!duelOpen) return;
+    putBeatInUrl(session.code);
+    startBeatChallenge(challenge, session);
+  } catch (error){
+    if (duelOpen) showDuelError(error, 'Try Again', createBeatChallenge);
+  }
+}
+
+async function joinChallenge({ code, name, kind = 'live' }){
+  if (kind === 'beat') return joinBeatChallenge({ code, name });
   duelUI.showBusy('Claiming the open seat…');
   focusDuel(duelUI.closeBtn);
   try {
@@ -400,6 +496,21 @@ async function joinChallenge({ code, name }){
       ? 'Enter Another Code'
       : 'Try Again';
     if (duelOpen) showDuelError(error, action);
+  }
+}
+
+async function joinBeatChallenge({ code, name }){
+  duelUI.showBusy('Claiming your one challenge run…');
+  focusDuel(duelUI.closeBtn);
+  try {
+    const { challenge, session } = await beatChallenge.join({ code, name });
+    if (!duelOpen) return;
+    putBeatInUrl(session.code);
+    startBeatChallenge(challenge, session);
+  } catch (error){
+    const action = error && ['challenge_claimed', 'challenge_not_found'].includes(error.code)
+      ? 'Back to Title' : 'Try Again';
+    if (duelOpen) showDuelError(error, action, action === 'Back to Title' ? returnFromDuelError : null);
   }
 }
 
@@ -424,6 +535,37 @@ async function recoverChallenge(code, { normalizeHistory = true } = {}){
     if (duelOpen){
       showDuelError(error, error && error.code === 'offline' ? 'Retry Connection' : 'Enter Another Code');
     }
+  }
+}
+
+async function recoverBeatChallenge(code, { normalizeHistory = true } = {}){
+  showDuelLayer();
+  if (normalizeHistory && !history.state?.stackfallDuel){
+    const challengeUrl = buildBeatUrl(location.href, code);
+    history.replaceState({ ...(history.state || {}), stackfallDuel: false }, '', withoutBeatUrl(location.href));
+    history.pushState({ stackfallDuel: true }, '', challengeUrl);
+  }
+  duelUI.showBusy('Opening the saved tower…');
+  focusDuel(duelUI.closeBtn);
+  try {
+    const { challenge, session } = await beatChallenge.recover(code);
+    if (!duelOpen) return;
+    if (challenge.state === 'finished'){
+      if (session) showCompletedBeat(challenge, session);
+      else showDuelError('challenge_claimed', 'Back to Title', returnFromDuelError);
+    } else if (!session){
+      if (challenge.state === 'open') openJoinDuel(code, { push: false, kind: 'beat' });
+      else showDuelError(challenge.state === 'host_playing' ? 'challenge_not_ready' : 'challenge_claimed', 'Back to Title', returnFromDuelError);
+    } else if ((session.seat === 'host' && challenge.state === 'host_playing') ||
+              (session.seat === 'guest' && challenge.state === 'guest_playing')){
+      startBeatChallenge(challenge, session);
+    } else {
+      showBeatChallengeReady(challenge);
+    }
+  } catch (error){
+    if (error && error.code === 'unauthorized') beatChallenge.clearSession(code);
+    if (duelOpen) showDuelError(error, error?.code === 'offline' ? 'Retry Connection' : 'Back to Title',
+      error?.code === 'offline' ? () => recoverBeatChallenge(code, { normalizeHistory: false }) : returnFromDuelError);
   }
 }
 
@@ -452,19 +594,25 @@ async function copyDuelText(value, button){
 }
 
 function challengeLink(){
+  if (duelUI.room?.kind === 'beat'){
+    const code = beatChallenge.code || beatChallenge.challenge.code;
+    return buildBeatUrl(location.href, code);
+  }
   const code = multiplayer.code || (multiplayer.room && multiplayer.room.code);
   return buildChallengeUrl(location.href, code);
 }
 
 async function shareChallenge(){
-  const room = multiplayer.room;
+  const room = duelUI.room?.kind === 'beat' ? duelUI.room : multiplayer.room;
   if (!room) return;
   const url = challengeLink();
   const difficulty = room.difficulty === 'hardcore' ? 'Hardcore' : 'Normal';
-  const text = `I challenge you to a ${difficulty} StackFall duel. Join my game: ${room.code}`;
+  const text = room.kind === 'beat'
+    ? `I set a ${difficulty} StackFall tower. You have 7 days to beat my score: ${room.seats.host.progress.score} pts. Challenge code: ${room.code}`
+    : `I challenge you to a ${difficulty} StackFall duel. Join my game: ${room.code}`;
   if (navigator.share){
     try {
-      await navigator.share({ title: 'StackFall Duel', text, url });
+      await navigator.share({ title: room.kind === 'beat' ? 'Beat My Tower' : 'StackFall Duel', text, url });
       return;
     } catch (error){
       if (error && error.name === 'AbortError') return;
@@ -476,6 +624,10 @@ async function shareChallenge(){
 duelUI.setCallbacks({
   close: () => {
     if (duelRound){
+      if (duelRound.kind === 'beat'){
+        duelUI.callbacks.forfeit?.();
+        return;
+      }
       if (multiplayer.room && ['finished', 'forfeit'].includes(multiplayer.room.state)){
         duelUI.callbacks.resultExit?.();
         return;
@@ -500,8 +652,13 @@ duelUI.setCallbacks({
   },
   share: shareChallenge,
   copyLink: () => copyDuelText(challengeLink(), duelUI.copyLinkBtn),
-  copyCode: () => copyDuelText(multiplayer.room.code, duelUI.copyCodeBtn),
+  copyCode: () => copyDuelText((duelUI.room || multiplayer.room).code, duelUI.copyCodeBtn),
   leave: async () => {
+    if (duelUI.room?.kind === 'beat'){
+      if (history.state?.stackfallDuel) history.back();
+      else closeDuelLayer();
+      return;
+    }
     leavingDuel = true;
     try {
       await multiplayer.leave();
@@ -512,8 +669,19 @@ duelUI.setCallbacks({
       leavingDuel = false;
     }
   },
-  forfeit: () => {
+  forfeit: async () => {
     if (!duelRound) return;
+    if (duelRound.kind === 'beat'){
+      const session = duelSession();
+      duelUI.forfeitBtn.disabled = true;
+      try {
+        if (session?.seat === 'host') await beatChallenge.cancel();
+      } catch (error){ /* unfinished challenges expire automatically */ }
+      resetDuelToTitle();
+      if (history.state?.stackfallDuel) history.back();
+      else closeDuelLayer();
+      return;
+    }
     duelUI.forfeitBtn.disabled = true;
     duelUI.liveState.textContent = 'FORFEITING';
     try { multiplayer.forfeit(); }
@@ -523,6 +691,7 @@ duelUI.setCallbacks({
     }
   },
   rematch: () => {
+    if (duelUI.room?.kind === 'beat') return;
     if (!multiplayer.room || !duelSession()) return;
     try {
       probeDuelClock();
@@ -534,7 +703,9 @@ duelUI.setCallbacks({
   },
   resultExit: async () => {
     leavingDuel = true;
-    try { await multiplayer.leave(); }
+    try {
+      if (duelUI.room?.kind !== 'beat') await multiplayer.leave();
+    }
     finally {
       leavingDuel = false;
       resetDuelToTitle();
@@ -552,6 +723,12 @@ duelUI.setCallbacks({
     if (duelUI.errorCode === 'room_cancelled'){
       if (history.state?.stackfallDuel) history.back();
       else closeDuelLayer();
+      return;
+    }
+    if (duelUI.errorCode.startsWith('challenge_') || duelUI.errorCode === 'cheated_challenge'){
+      const code = beatChallenge.code || beatCodeFromUrl(location.href) || '';
+      if (code) recoverBeatChallenge(code, { normalizeHistory: false });
+      else returnFromDuelError();
       return;
     }
     if (['bad_code', 'room_full', 'room_not_found', 'room_started'].includes(duelUI.errorCode)){
@@ -677,6 +854,10 @@ multiplayer.on('connection', ({ connection }) => {
 
 window.addEventListener('popstate', () => {
   if (duelRound){
+    if (duelRound.kind === 'beat'){
+      duelUI.callbacks.forfeit?.();
+      return;
+    }
     if (multiplayer.room && ['finished', 'forfeit'].includes(multiplayer.room.state)){
       duelUI.callbacks.resultExit?.();
       return;
@@ -685,6 +866,8 @@ window.addEventListener('popstate', () => {
     return;
   }
   if (history.state?.stackfallDuel){
+    const beatCode = beatCodeFromUrl(location.href);
+    if (beatCode){ recoverBeatChallenge(beatCode, { normalizeHistory: false }); return; }
     const code = challengeCodeFromUrl(location.href);
     if (code) recoverChallenge(code, { normalizeHistory: false });
     else openJoinDuel('', { push: false });
@@ -705,7 +888,9 @@ const game = new Game({
       if (!duelRound || !duelRound.started || duelRound.finished) return;
       duelRound.progress = duelProgress(progress);
       renderDuelHud(duelRound.progress);
-      try { multiplayer.progress(duelRound.progress); } catch (error) { /* final payload catches up after reconnect */ }
+      if (duelRound.kind !== 'beat'){
+        try { multiplayer.progress(duelRound.progress); } catch (error) { /* final payload catches up after reconnect */ }
+      }
       if (hasSecuredWin(duelRound.progress, duelRound.opponentProgress, duelRound.opponentFinished) && !duelRound.winSecured){
         duelRound.winSecured = true;
         announce('Win secured. Keep stacking for your final score.');
@@ -714,13 +899,16 @@ const game = new Game({
     onScore: (s, combo) => { ui.setScore(s); ui.setCombo(combo); ui.pulseScore(); checkAchievements(); },
     onWorld: (world) => { background.setWorld(world); },
     onGameOver: (score, floors, cheated, maxCombo) => {
-      if (runContext.active && runContext.active.mode === RUN_MODES.DUEL){
+      if (runContext.active && [RUN_MODES.DUEL, RUN_MODES.BEAT].includes(runContext.active.mode)){
+        const friendMode = runContext.active.mode;
         runContext.complete();
         finishDuelLocally(progressFromGame(game));
         paused = false;
         ui.hidePause();
         ui.setPauseButtonVisible(false);
-        announce(`Tower finished. ${score} points, ${floors} floors. Waiting for the duel result.`);
+        announce(friendMode === RUN_MODES.BEAT
+          ? `Tower set. ${score} points, ${floors} floors. Saving the challenge.`
+          : `Tower finished. ${score} points, ${floors} floors. Waiting for the duel result.`);
         return;
       }
       // Capture the mode/difficulty the run was actually played in — the toggles
@@ -983,8 +1171,8 @@ function resize(){
 function dismissTutorial(){
   Storage.setTutorialSeen();
   ui.hideTutorial();
-  if (pendingChallenge !== null){
-    openPendingChallenge();
+  if (pendingChallenge !== null || pendingBeatChallenge !== null){
+    openPendingFriendChallenge();
     return;
   }
   // Hand the focus trap to the start panel that's now the active modal.
@@ -1006,10 +1194,23 @@ if (!Storage.tutorialSeen()){
   setModal(ui.tutorialOverlay, ui.tutorialBtn);
 } else {
   setModal(ui.panel, ui.startBtn);
-  if (pendingChallenge !== null) queueMicrotask(openPendingChallenge);
+  if (pendingChallenge !== null || pendingBeatChallenge !== null) queueMicrotask(openPendingFriendChallenge);
 }
 
-function openPendingChallenge(){
+function openPendingFriendChallenge(){
+  if (pendingBeatChallenge !== null){
+    const code = pendingBeatChallenge;
+    pendingBeatChallenge = null;
+    if (code === ''){
+      if (!history.state?.stackfallDuel){
+        const invalidUrl = location.href;
+        history.replaceState({ ...(history.state || {}), stackfallDuel: false }, '', withoutBeatUrl(location.href));
+        history.pushState({ stackfallDuel: true }, '', invalidUrl);
+      }
+      showDuelError('bad_code', 'Back to Title', returnFromDuelError);
+    } else if (code) recoverBeatChallenge(code);
+    return;
+  }
   const code = pendingChallenge;
   pendingChallenge = null;
   if (code === ''){
@@ -1191,6 +1392,12 @@ ui.joinDuelBtn.addEventListener('click', (e) => {
   e.stopPropagation();
   uiSound('blip');
   openJoinDuel();
+});
+ui.beatBtn.addEventListener('pointerdown', (e) => e.stopPropagation());
+ui.beatBtn.addEventListener('click', (e) => {
+  e.stopPropagation();
+  uiSound('blip');
+  createBeatChallenge();
 });
 
 // Share button (game-over only).

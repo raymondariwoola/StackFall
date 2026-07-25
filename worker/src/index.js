@@ -19,10 +19,12 @@
 
 import { clientIp, rateLimit, intEnv } from './rate-limit.js';
 import { handleMatchRequest, isMatchPath } from './match-api.js';
+import { handleChallengeRequest, isChallengePath } from './challenge-api.js';
 import { DUEL_LIMITS, DUEL_PROTOCOL_VERSION } from '../../shared/duel-protocol.js';
 import { safeErrorEvent } from './safe-log.js';
 export { intEnv } from './rate-limit.js';
 export { MatchRoom } from './match-room.js';
+export { ChallengeRoom } from './challenge-room.js';
 
 const KEEP = 50;              // entries stored per board
 const TOP = 20;               // entries returned to clients
@@ -44,7 +46,7 @@ export default {
         return json({
           ok: true,
           service: 'stackfall-backend',
-          endpoints: ['/daily', '/leaderboard', '/score', '/matches'],
+          endpoints: ['/daily', '/leaderboard', '/score', '/matches', '/challenges'],
           multiplayer: {
             enabled: (env.MULTIPLAYER_ENABLED || '1') !== '0',
             protocol: DUEL_PROTOCOL_VERSION,
@@ -98,6 +100,10 @@ export default {
 
       if (url.pathname === '/cheat' && request.method === 'POST') {
         return await handleCheat(request, env, cors);
+      }
+
+      if (isChallengePath(url.pathname)) {
+        return await handleChallengeRequest(request, env, cors);
       }
 
       if (isMatchPath(url.pathname)) {

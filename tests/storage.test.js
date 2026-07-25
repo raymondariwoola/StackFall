@@ -18,4 +18,11 @@ test('Duel runs appear in local history without changing competitive records', (
   assert.equal(Storage.runs()[0].mode, 'duel');
   assert.equal(Storage.bestForDifficulty('normal'), beforeDifficulty);
   assert.equal(Storage.bestForMode('endless'), beforeEndless);
+
+  const challenge = Storage.addRun({
+    score: run.score + 1, floors: 13, mode: 'beat', difficulty: 'normal', streak: 5,
+  });
+  assert.equal(challenge.mode, 'beat');
+  assert.equal(Storage.bestForDifficulty('normal'), beforeDifficulty);
+  assert.equal(Storage.bestForMode('endless'), beforeEndless);
 });

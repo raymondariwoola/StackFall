@@ -7,6 +7,36 @@ GitHub Pages/Worker deployment shape visible in this repository. This is a
 static code audit; production behavior, DNS, deployed Worker variables, KV
 contents, and real-device behavior were not directly inspected.
 
+## Multiplayer Phase 5 Beat My Tower (2026-07-25)
+
+Phase 5 is complete locally. Asynchronous challenges are isolated in a new
+SQLite-backed `ChallengeRoom` Durable Object with additive migration `v3`; live
+Duel's socket lifecycle and invariants were not overloaded. A host plays a
+server-seeded tower first, then shares a seven-day `?beat=XXXX-XXXX` link. The
+first guest claims one seat, plays the same seed later, and receives a
+server-compared result.
+
+The delayed path deliberately uses only HTTP create/read/join/final operations.
+There is no idle socket, heartbeat, presence stream, or per-landing traffic.
+Capabilities remain in `sessionStorage`, URLs contain only the public code,
+and create/join share the existing anonymous rate limits. One alarm deletes an
+abandoned host draft after two hours; a completed host run resets that alarm
+for the seven-day invite window, after which all room storage is deleted. Beat
+runs are labelled in local history but do not alter personal, global, or daily
+records.
+
+Validation evidence:
+
+- `npm test`: 58/58 tests pass;
+- `npm run test:e2e`: 2/2 live and delayed browser scenarios pass, including a
+  time-separated host/guest flow on the same seed and authoritative 21–18 result;
+- local Worker integration completes live Duel plus delayed challenge creation,
+  claim, same-seed verification, and result;
+- the Wrangler bundle includes `ChallengeRoom` and migration `v3`.
+
+No deployment occurred. Applying `v3`, sharing through WhatsApp on a real phone,
+and observing production cleanup/Metrics remain owner-operated release checks.
+
 ## Multiplayer Phase 4 hardening and cost guardrails (2026-07-25)
 
 Phase 4 of `MULTIPLAYER_PLAN.md` is complete locally. The release gate now

@@ -19,6 +19,11 @@ export const DUEL_ERROR_COPY = Object.freeze({
   offline: 'You appear to be offline. Reconnect and try again.',
   socket_failed: 'The live room connection failed. Check your connection and retry.',
   network_error: 'The room service did not respond. Please try again.',
+  challenge_not_found: 'That Beat My Tower challenge has expired or no longer exists.',
+  challenge_not_ready: 'Your friend is still setting their tower. Try this link again shortly.',
+  challenge_claimed: 'Another friend already claimed this Beat My Tower challenge.',
+  challenge_already_played: 'This challenge run has already been submitted.',
+  cheated_challenge: 'Beat My Tower runs cannot use cheats.',
 });
 
 export function duelErrorText(code){
@@ -117,6 +122,7 @@ export class DuelUI {
     this.room = null;
     this.session = null;
     this.errorCode = '';
+    this.joinKind = 'live';
 
     this.codeInput.addEventListener('input', () => {
       this.codeInput.value = formatRoomCode(normalizeRoomCode(this.codeInput.value));
@@ -129,7 +135,7 @@ export class DuelUI {
       const name = cleanDuelName(this.nameInput.value);
       if (!name){ this.formError.textContent = 'Enter a name for this duel.'; this.nameInput.focus(); return; }
       if (!isValidRoomCode(code)){ this.formError.textContent = duelErrorText('bad_code'); this.codeInput.focus(); return; }
-      this.callbacks.join?.({ code, name });
+      this.callbacks.join?.({ code, name, kind: this.joinKind });
     });
     this.closeBtn.addEventListener('click', () => this.callbacks.close?.());
     this.shareBtn.addEventListener('click', () => this.callbacks.share?.());
@@ -170,10 +176,13 @@ export class DuelUI {
     this.root.setAttribute('aria-hidden', 'true');
   }
 
-  showJoin({ code = '', name = '', error = '' } = {}){
+  showJoin({ code = '', name = '', error = '', kind = 'live' } = {}){
+    this.joinKind = kind;
     this._view('join');
-    this.title.textContent = code ? 'Join This Duel' : 'Join a Duel';
-    this.status.textContent = code ? 'You were invited. Add your name to claim the open seat.' : 'Enter the eight-character code your friend shared.';
+    this.title.textContent = kind === 'beat' ? 'Beat Their Tower' : code ? 'Join This Duel' : 'Join a Duel';
+    this.status.textContent = kind === 'beat'
+      ? 'Play the same tower seed on your own time. You get one submitted result.'
+      : code ? 'You were invited. Add your name to claim the open seat.' : 'Enter the eight-character code your friend shared.';
     this.nameInput.value = cleanDuelName(name);
     this.codeInput.value = formatRoomCode(normalizeRoomCode(code));
     this.formError.textContent = error ? duelErrorText(error) : '';
@@ -199,11 +208,39 @@ export class DuelUI {
     setPlayer(this.hostRow, this.hostName, this.hostState, room.seats.host);
     setPlayer(this.guestRow, this.guestName, this.guestState, room.seats.guest);
     this.shareActions.hidden = session && session.seat !== 'host';
+    this.readyBtn.hidden = false;
+    this.leaveBtn.textContent = 'Leave this game';
     this.readyBtn.textContent = model.readyLabel;
     this.readyBtn.disabled = !model.canReady;
     this.lobbyNote.textContent = room.state === 'countdown' || room.state === 'playing'
-      ? 'Live Duel gameplay will connect to this handoff in the next phase.'
+      ? 'Both players are running the same seed. Progress updates after each landing.'
       : 'The duel starts when both players are ready.';
+    this.show();
+  }
+
+  showBeatReady(challenge, session){
+    this.room = challenge;
+    this.session = session;
+    this._view('lobby');
+    this.title.textContent = challenge.state === 'finished' ? 'Challenge Complete' : 'Challenge Ready';
+    this.status.textContent = challenge.state === 'open'
+      ? 'Your tower is set. Send this seven-day challenge to a friend.'
+      : challenge.state === 'guest_playing'
+        ? `${challenge.seats.guest.name} claimed the challenge and is playing.`
+        : 'Both towers are complete.';
+    this.roomCode.textContent = formatRoomCode(challenge.code);
+    this.difficulty.textContent = `${challenge.difficulty === 'hardcore' ? 'Hardcore' : 'Normal'} · same seed · 7 days`;
+    setPlayer(this.hostRow, this.hostName, this.hostState, challenge.seats.host);
+    setPlayer(this.guestRow, this.guestName, this.guestState, challenge.seats.guest);
+    if (challenge.seats.host?.finished) this.hostState.textContent = `${challenge.seats.host.progress.score} pts set`;
+    if (challenge.seats.guest?.finished) this.guestState.textContent = `${challenge.seats.guest.progress.score} pts`;
+    else if (challenge.seats.guest) this.guestState.textContent = 'Playing';
+    this.shareActions.hidden = !session || session.seat !== 'host' || challenge.state !== 'open';
+    this.readyBtn.hidden = true;
+    this.lobbyNote.textContent = challenge.state === 'open'
+      ? 'The first friend to claim the link gets one submitted result.'
+      : challenge.state === 'guest_playing' ? 'Come back through the same link to see the result.' : 'Final result recorded.';
+    this.leaveBtn.textContent = 'Back to title';
     this.show();
   }
 
@@ -239,7 +276,7 @@ export class DuelUI {
     this.session = session;
     this._view('result');
     this.title.textContent = model.title;
-    this.status.textContent = `Round ${room.round} complete`;
+    this.status.textContent = room.kind === 'beat' ? 'Beat My Tower complete' : `Round ${room.round} complete`;
     this.resultView.dataset.tone = model.tone;
     this.resultMark.textContent = model.tone === 'win' ? '★' : model.tone === 'loss' ? '×' : '=';
     this.resultCopy.textContent = model.detail;
@@ -249,6 +286,8 @@ export class DuelUI {
     this.resultOpponentName.textContent = model.opponentName;
     this.resultOpponentScore.textContent = String(model.opponentProgress.score);
     this.resultOpponentFloors.textContent = `${model.opponentProgress.floors} floors`;
+    this.rematchBtn.hidden = room.kind === 'beat';
+    this.rematchNote.hidden = room.kind === 'beat';
     this.rematchBtn.disabled = model.ownRematch;
     this.rematchBtn.textContent = model.ownRematch ? 'Rematch Requested ✓' : 'Play Again';
     this.rematchNote.textContent = model.opponentRematch

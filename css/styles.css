@@ -230,6 +230,7 @@ canvas{ display:block; width:100%; height:100%; position:relative; z-index:0; }
   cursor:pointer;
 }
 .duel-entry.primary{ color: var(--bg); background: var(--cyan); border-color: var(--cyan); }
+.duel-entry.beat{ grid-column: 1 / -1; color: var(--amber); border-color: color-mix(in srgb, var(--amber) 65%, transparent); }
 .duel-entry:active{ transform: scale(.97); }
 .duel-entry:disabled{ opacity:.45; cursor:not-allowed; }
 

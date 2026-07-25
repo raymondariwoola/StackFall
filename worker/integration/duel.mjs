@@ -188,7 +188,24 @@ try {
   assert.equal(forfeit.payload.room.state, 'forfeit');
   assert.equal(forfeit.payload.room.result.winner, 'host');
   assert.equal(forfeit.payload.room.result.reason, 'left');
-  console.log(`Integration passed: ${code} completed, rematched, and forfeited over two real WebSockets.`);
+
+  const asyncCreated = await api('/challenges', jsonPost({ name: 'Later Host', difficulty: 'hardcore' }));
+  assert.equal(asyncCreated.response.status, 201);
+  const asyncCode = asyncCreated.body.code;
+  const asyncSeed = asyncCreated.body.challenge.seed;
+  const asyncHostFinish = await api(
+    `/challenges/${asyncCode}/finish`, jsonPost(progress(90, 6), asyncCreated.body.hostToken),
+  );
+  assert.equal(asyncHostFinish.body.challenge.state, 'open');
+  const asyncJoined = await api(`/challenges/${asyncCode}/join`, jsonPost({ name: 'Later Guest' }));
+  assert.equal(asyncJoined.response.status, 200);
+  assert.equal(asyncJoined.body.challenge.seed, asyncSeed);
+  const asyncGuestFinish = await api(
+    `/challenges/${asyncCode}/finish`, jsonPost(progress(110, 7), asyncJoined.body.guestToken),
+  );
+  assert.equal(asyncGuestFinish.body.challenge.state, 'finished');
+  assert.equal(asyncGuestFinish.body.challenge.result.winner, 'guest');
+  console.log(`Integration passed: live ${code} and delayed ${asyncCode} completed on real local Worker state.`);
 } finally {
   host?.socket.close();
   guest?.socket.close();

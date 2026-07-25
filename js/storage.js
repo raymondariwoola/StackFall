@@ -94,7 +94,7 @@ export const Storage = {
     const score = Math.max(0, Math.floor(Number(record.score) || 0));
     const mode = record.mode === 'daily' ? 'daily'
       : record.mode === 'practice' ? 'practice'
-        : record.mode === 'duel' ? 'duel' : 'endless';
+        : record.mode === 'duel' ? 'duel' : record.mode === 'beat' ? 'beat' : 'endless';
     const run = {
       score,
       floors: Math.max(0, Math.floor(Number(record.floors) || 0)),
@@ -108,7 +108,7 @@ export const Storage = {
     safeSet(RUNS_KEY, JSON.stringify(list.slice(0, RUNS_MAX)));
 
     // Practice is consequence-free: it appears in history but sets no records.
-    if (mode !== 'practice' && mode !== 'duel'){
+    if (mode !== 'practice' && mode !== 'duel' && mode !== 'beat'){
       const bd = this.bestByDifficulty();
       if (score > (bd[run.difficulty] || 0)){
         bd[run.difficulty] = score;

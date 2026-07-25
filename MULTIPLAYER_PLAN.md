@@ -616,7 +616,7 @@ Metrics, confirm room cleanup after its deadline, and exercise the kill switch.
 Those steps require the owner's Cloudflare/GitHub access and explicit deploy
 approval.
 
-### Phase 5 — Optional “Beat My Tower” Challenge
+### Phase 5 — “Beat My Tower” Challenge — ✅ Complete locally (2026-07-25)
 
 Goal: let friends compete even when they cannot be online together.
 
@@ -628,6 +628,47 @@ not require both sockets to be connected at once.
 Keep this out of the live-Duel MVP. It is an excellent later addition because
 WhatsApp challenges are often answered hours later, but mixing live and
 asynchronous lifecycle rules too early would slow down delivery.
+
+Phase 5 result:
+
+- added a separate SQLite-backed `ChallengeRoom` Durable Object and additive
+  `v3` migration instead of forcing delayed rules into the proven live-Duel
+  state machine;
+- the host selects **Beat My Tower · Play Later**, receives a private server
+  seed, plays locally, and stores one final result. Only then does the seven-day
+  `?beat=XXXX-XXXX` link become shareable;
+- the first guest to claim the link receives the identical seed and one
+  capability-backed submitted result. The server compares score, floors,
+  perfects, and best combo and keeps the completed result until expiry;
+- async challenges use ordinary create/read/join/final HTTP calls—no idle
+  WebSocket, heartbeat, presence traffic, or per-landing network messages. They
+  share the existing create/join IP limits and multiplayer kill switch;
+- capabilities stay in per-tab `sessionStorage`; invite URLs contain only the
+  public challenge code. Host and guest runs are labelled **Beat Challenge** in
+  local history and remain outside personal, daily, and global records;
+- a host draft expires after two hours if its run is never finished. Finishing
+  the host run resets the alarm and starts the seven-day invite window;
+  unclaimed, claimed, and completed challenges then receive permanent
+  `deleteAll()` cleanup. A host can explicitly cancel an unfinished challenge.
+
+Validation evidence:
+
+- root `npm test`: 58/58 tests pass, including lifecycle, one-result enforcement,
+  two-hour draft and seven-day invite cleanup, capability secrecy, URL safety, client final submit,
+  run-context, and local-history isolation;
+- `npm run test:e2e`: 2/2 browser scenarios pass. The delayed scenario creates
+  the host tower, reloads later to share it, claims it in an isolated guest
+  context, verifies the same seed, submits the guest tower, and renders the
+  authoritative 21–18 result without live-Duel rematch controls;
+- Worker integration completes both the existing real-WebSocket Duel and the
+  delayed HTTP challenge against local Wrangler;
+- Wrangler sees only a few HTTP operations for the entire seven-day flow, so
+  Beat My Tower costs materially less than keeping an asynchronous socket open.
+
+No deployment occurred. Production acceptance requires the approved Worker
+deploy (which applies migration `v3`), the static-site deploy, and one real-phone
+WhatsApp link opened after a meaningful delay. The existing Phase 4 production
+Metrics, cleanup, and kill-switch checklist applies to both multiplayer modes.
 
 ## Suggested File Shape
 

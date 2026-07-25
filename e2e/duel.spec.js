@@ -86,3 +86,68 @@ test('two isolated players can forfeit and rematch on one shared seed', async ({
     await Promise.all([hostContext.close(), guestContext.close()]);
   }
 });
+
+async function submitChallengeResult(page, code, score){
+  return page.evaluate(async ({ challengeCode, finalScore }) => {
+    const key = `stackfall_beat_${challengeCode.replace(/-/g, '')}`;
+    const session = JSON.parse(sessionStorage.getItem(key));
+    const response = await fetch(`/challenges/${challengeCode}/finish`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${session.token}` },
+      body: JSON.stringify({
+        score: finalScore,
+        floors: 3,
+        perfects: 1,
+        maxCombo: 1,
+        combo: 0,
+        widthRatio: 0.5,
+        cheated: false,
+      }),
+    });
+    return { status: response.status, body: await response.json() };
+  }, { challengeCode: code, finalScore: score });
+}
+
+test('Beat My Tower can be claimed and completed later on the same seed', async ({ browser }) => {
+  const hostContext = await playerContext(browser, 'Async Host');
+  const guestContext = await playerContext(browser, 'Async Guest');
+  const host = await hostContext.newPage();
+  const guest = await guestContext.newPage();
+  try {
+    await host.goto('/');
+    await host.locator('#beat-btn').click();
+    await expect(host.locator('#duel-hud')).toBeVisible({ timeout: 10_000 });
+    const code = new URL(host.url()).searchParams.get('beat');
+    expect(code).toMatch(/^[23456789ABCDEFGHJKMNPQRSTUVWXYZ]{4}-[23456789ABCDEFGHJKMNPQRSTUVWXYZ]{4}$/);
+    const hostState = await host.evaluate(async (challengeCode) =>
+      (await fetch(`/challenges/${challengeCode}`)).json(), code);
+    const seed = hostState.challenge.seed;
+
+    const hostFinish = await submitChallengeResult(host, code, 18);
+    expect(hostFinish.status).toBe(200);
+    expect(hostFinish.body.challenge.state).toBe('open');
+    await host.reload();
+    await expect(host.locator('#duel-title')).toHaveText('Challenge Ready');
+    await expect(host.locator('#duel-share')).toBeVisible();
+
+    await guest.goto(`/?beat=${code}`);
+    await expect(guest.locator('#duel-title')).toHaveText('Beat Their Tower');
+    await guest.locator('#duel-name').fill('Async Guest');
+    await guest.locator('#duel-join-submit').click();
+    await expect(guest.locator('#duel-hud')).toBeVisible({ timeout: 10_000 });
+    const guestState = await guest.evaluate(async (challengeCode) =>
+      (await fetch(`/challenges/${challengeCode}`)).json(), code);
+    expect(guestState.challenge.seed).toBe(seed);
+
+    const guestFinish = await submitChallengeResult(guest, code, 21);
+    expect(guestFinish.status).toBe(200);
+    expect(guestFinish.body.challenge.result.winner).toBe('guest');
+    await guest.reload();
+    await expect(guest.locator('#duel-title')).toHaveText('You Win!');
+    await expect(guest.locator('#duel-rematch')).toBeHidden();
+    await expect(guest.locator('#duel-result-my-score')).toHaveText('21');
+    await expect(guest.locator('#duel-result-opponent-score')).toHaveText('18');
+  } finally {
+    await Promise.all([hostContext.close(), guestContext.close()]);
+  }
+});

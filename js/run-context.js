@@ -7,6 +7,7 @@ export const RUN_MODES = Object.freeze({
   DAILY: 'daily',
   PRACTICE: 'practice',
   DUEL: 'duel',
+  BEAT: 'beat',
 });
 
 export const RUN_DIFFICULTIES = Object.freeze({
@@ -79,7 +80,7 @@ export class RunContext {
       mode,
       difficulty,
       seed: normalizedSeed || 1,
-      duel: mode === RUN_MODES.DUEL ? freezeDuel(overrides.duel) : null,
+      duel: mode === RUN_MODES.DUEL || mode === RUN_MODES.BEAT ? freezeDuel(overrides.duel) : null,
     });
     return this._active;
   }
