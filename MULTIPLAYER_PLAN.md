@@ -656,10 +656,11 @@ Validation evidence:
 - root `npm test`: 58/58 tests pass, including lifecycle, one-result enforcement,
   two-hour draft and seven-day invite cleanup, capability secrecy, URL safety, client final submit,
   run-context, and local-history isolation;
-- `npm run test:e2e`: 2/2 browser scenarios pass. The delayed scenario creates
+- `npm run test:e2e`: 3/3 browser scenarios pass. The delayed coverage creates
   the host tower, reloads later to share it, claims it in an isolated guest
   context, verifies the same seed, submits the guest tower, and renders the
-  authoritative 21–18 result without live-Duel rematch controls;
+  authoritative 21–18 result without live-Duel rematch controls; they also
+  verify that exiting an unfinished host run cancels it and restores the title;
 - Worker integration completes both the existing real-WebSocket Duel and the
   delayed HTTP challenge against local Wrangler;
 - Wrangler sees only a few HTTP operations for the entire seven-day flow, so

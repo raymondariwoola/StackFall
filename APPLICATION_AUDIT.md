@@ -28,8 +28,9 @@ records.
 Validation evidence:
 
 - `npm test`: 58/58 tests pass;
-- `npm run test:e2e`: 2/2 live and delayed browser scenarios pass, including a
-  time-separated host/guest flow on the same seed and authoritative 21–18 result;
+- `npm run test:e2e`: 3/3 live and delayed browser scenarios pass, including a
+  time-separated host/guest flow on the same seed, authoritative 21–18 result,
+  and unfinished-run cancellation with title restoration;
 - local Worker integration completes live Duel plus delayed challenge creation,
   claim, same-seed verification, and result;
 - the Wrangler bundle includes `ChallengeRoom` and migration `v3`.

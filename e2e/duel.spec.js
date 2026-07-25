@@ -151,3 +151,23 @@ test('Beat My Tower can be claimed and completed later on the same seed', async 
     await Promise.all([hostContext.close(), guestContext.close()]);
   }
 });
+
+test('exiting an unfinished Beat My Tower run cancels it and restores the title', async ({ browser }) => {
+  const context = await playerContext(browser, 'Exit Check');
+  const page = await context.newPage();
+  try {
+    await page.goto('/');
+    await page.locator('#beat-btn').click();
+    await expect(page.locator('#duel-hud')).toBeVisible({ timeout: 10_000 });
+    const code = new URL(page.url()).searchParams.get('beat');
+    expect(code).toBeTruthy();
+
+    await page.locator('#duel-forfeit').click();
+    await expect(page.locator('#beat-btn')).toBeVisible();
+    await expect(page).not.toHaveURL(/\?beat=/);
+    const response = await page.request.get(`/challenges/${code}`);
+    expect(response.status()).toBe(404);
+  } finally {
+    await context.close();
+  }
+});

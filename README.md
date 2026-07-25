@@ -82,8 +82,8 @@ npm run test:e2e
 
 That command owns both local servers and runs isolated host/guest contexts for
 both modes. It verifies live create/join, synchronized play, forfeit, rematch,
-rotation and results, plus a time-separated Beat My Tower claim on the same seed.
-It shuts the servers down afterward.
+rotation and results, plus a time-separated Beat My Tower claim on the same seed
+and unfinished-run exit cleanup. It shuts the servers down afterward.
 
 ### Run the real Worker integration test
 
