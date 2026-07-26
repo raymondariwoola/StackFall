@@ -24,12 +24,15 @@ disqualification reason. The Worker continues rejecting `cheated:true` from
 custom or stale clients as a defensive fallback. Single-player leaderboard
 blocking remains unchanged.
 
-Validation on 2026-07-26: root tests pass 58/58; all three Playwright scenarios
+Validation on 2026-07-26: root tests pass 58/58; all four Playwright scenarios
 pass against local Wrangler, including a two-browser assertion that the guest's
-live `opponent_progress` contains no `cheated` property; and the Worker deploy
-dry-run resolves every production binding. A single deliberately wrong-code
-probe returned HTTP 401, confirming that the deployed Worker has `CHEAT_CODE`
-configured without exposing or changing the secret.
+live `opponent_progress` contains no `cheated` property and an autofill
+regression proving a password-manager username cannot overwrite the saved
+player name. The cheat credentials now live in an isolated semantic form, and
+the UI snapshots and restores the player name while that form is open. The
+Worker deploy dry-run resolves every production binding. A single deliberately
+wrong-code probe returned HTTP 401, confirming that the deployed Worker has
+`CHEAT_CODE` configured without exposing or changing the secret.
 
 ## Multiplayer Phase 5 Beat My Tower (2026-07-25)
 

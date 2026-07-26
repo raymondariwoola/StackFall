@@ -63,9 +63,11 @@ export class CheatMenu {
     this.overlay.addEventListener('pointerdown', (e) => e.stopPropagation());
     this.overlay.addEventListener('click', (e) => { if (e.target === this.overlay) this.close(); });
 
-    document.getElementById('cheat-unlock').addEventListener('click', () => this._tryUnlock());
+    this.lockView.addEventListener('submit', (e) => {
+      e.preventDefault();
+      this._tryUnlock();
+    });
     document.getElementById('cheat-cancel').addEventListener('click', () => this.close());
-    this.codeInput.addEventListener('keydown', (e) => { if (e.key === 'Enter') this._tryUnlock(); });
 
     document.getElementById('cheat-resume').addEventListener('click', () => this.close());
     document.getElementById('cheat-exit').addEventListener('click', () => this.exit());

@@ -27,6 +27,7 @@ export class UI {
     this.lbList = document.getElementById('lb-list');
     this.lbTabs = document.getElementById('lb-tabs');
     this.nameInput = document.getElementById('name-input');
+    this._protectedName = null;
     this.eyebrow = document.querySelector('.eyebrow');
     this.h1 = document.querySelector('.panel h1');
     this.sub = document.querySelector('.panel .sub');
@@ -68,6 +69,13 @@ export class UI {
     // the "tap anywhere to start" handler on the wrap.
     this.nameInput.value = Storage.name();
     this.nameInput.addEventListener('input', () => {
+      // Password managers sometimes pair the hidden cheat passphrase with this
+      // unrelated visible field. Never persist their username autofill while
+      // the cheat credential form is open.
+      if (this._protectedName != null){
+        this.nameInput.value = this._protectedName;
+        return;
+      }
       Storage.setName(this.nameInput.value.trim());
       this.updateNameGate();
     });
@@ -78,6 +86,19 @@ export class UI {
   }
 
   refreshBest(){ this.bestChip.textContent = 'Best: ' + Storage.best(); }
+
+  protectNameFromCredentialAutofill(){
+    if (this._protectedName == null) this._protectedName = this.nameInput.value;
+  }
+
+  restoreNameAfterCredentialAutofill(){
+    if (this._protectedName == null) return;
+    this.nameInput.value = this._protectedName;
+    Storage.setName(this._protectedName.trim());
+    this._protectedName = null;
+    this.updateNameGate();
+  }
+
   setScore(s){ this.score.textContent = String(s); }
 
   setCombo(combo){

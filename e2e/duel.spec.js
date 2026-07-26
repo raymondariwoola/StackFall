@@ -20,6 +20,31 @@ async function playerContext(browser, name){
   return context;
 }
 
+test('cheat credential autofill cannot overwrite the saved player name', async ({ browser }) => {
+  const context = await playerContext(browser, 'Raymond');
+  const page = await context.newPage();
+
+  try {
+    await page.goto('/');
+    for (let tap = 0; tap < 5; tap++) await page.locator('#panel-title').click();
+    await expect(page.locator('#cheat-overlay')).toHaveClass(/show/);
+
+    // Model a password manager filling its saved credential username into the
+    // wrong visible field and firing the normal browser input event.
+    await page.locator('#name-input').evaluate((input) => {
+      input.value = 'Cheat_Code';
+      input.dispatchEvent(new InputEvent('input', { bubbles: true, inputType: 'insertReplacementText' }));
+    });
+
+    await expect(page.locator('#name-input')).toHaveValue('Raymond');
+    await page.locator('#cheat-cancel').click();
+    await expect(page.locator('#name-input')).toHaveValue('Raymond');
+    await expect.poll(() => page.evaluate(() => localStorage.getItem('stackfall_name'))).toBe('Raymond');
+  } finally {
+    await context.close();
+  }
+});
+
 test('two isolated players can forfeit and rematch on one shared seed', async ({ browser }) => {
   const hostContext = await playerContext(browser, 'E2E Host');
   const guestContext = await playerContext(browser, 'E2E Guest');

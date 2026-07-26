@@ -59,7 +59,7 @@
       <div class="eyebrow">Precision Build</div>
       <h1 id="panel-title">StackFall</h1>
       <div class="sub" id="panel-sub">Tap to drop each floor. Land it clean.</div>
-      <input id="name-input" type="text" maxlength="12" placeholder="Your name (required)" autocomplete="off" autocapitalize="off" spellcheck="false" aria-label="Player name" required>
+      <input id="name-input" name="stackfall-player-name" type="text" maxlength="12" placeholder="Your name (required)" autocomplete="nickname" autocapitalize="off" spellcheck="false" aria-label="Player name" required>
       <div id="name-hint" class="name-hint"></div>
       <div id="submitted-as" class="submitted-as" hidden></div>
       <button id="start-btn">Start</button>
@@ -211,16 +211,19 @@
   <div id="cheat-overlay">
     <div class="cheat-panel" role="dialog" aria-modal="true" aria-label="Cheat menu">
       <!-- Passphrase gate -->
-      <div id="cheat-lock" class="cheat-view">
+      <form id="cheat-lock" class="cheat-view" autocomplete="off">
         <div class="cheat-eyebrow">Restricted</div>
         <h2>Enter Passphrase</h2>
-        <input id="cheat-code" type="password" placeholder="••••••••" autocomplete="off" autocapitalize="off" spellcheck="false" aria-label="Cheat passphrase">
+        <!-- Give password managers a username target inside this isolated form
+             so they never pair the passphrase with the player-name field. -->
+        <input class="sr-only" name="username" type="text" value="StackFall cheats" autocomplete="username" tabindex="-1" aria-hidden="true">
+        <input id="cheat-code" name="password" type="password" placeholder="••••••••" autocomplete="current-password" autocapitalize="off" spellcheck="false" aria-label="Cheat passphrase">
         <div id="cheat-error" class="cheat-error"></div>
         <div class="cheat-actions">
-          <button id="cheat-unlock" class="cheat-btn primary">Unlock</button>
-          <button id="cheat-cancel" class="cheat-btn ghost">Cancel</button>
+          <button id="cheat-unlock" class="cheat-btn primary" type="submit">Unlock</button>
+          <button id="cheat-cancel" class="cheat-btn ghost" type="button">Cancel</button>
         </div>
-      </div>
+      </form>
 
       <!-- Cheat controls -->
       <div id="cheat-menu" class="cheat-view" hidden>

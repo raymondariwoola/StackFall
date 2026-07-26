@@ -999,8 +999,14 @@ const game = new Game({
 // prior pause state (so it doesn't un-pause a deliberately paused game).
 const cheatMenu = new CheatMenu({
   game,
-  onOpen: () => { game.paused = true; },
-  onClose: () => { game.paused = paused; },
+  onOpen: () => {
+    ui.protectNameFromCredentialAutofill();
+    game.paused = true;
+  },
+  onClose: () => {
+    ui.restoreNameAfterCredentialAutofill();
+    game.paused = paused;
+  },
   canOpen: () => !duelOpen,
 });
 
