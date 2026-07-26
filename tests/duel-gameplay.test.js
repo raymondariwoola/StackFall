@@ -6,6 +6,7 @@ import {
   duelProgress,
   estimateServerOffset,
   hasSecuredWin,
+  privateMultiplayerProgress,
   progressFromGame,
   resultModel,
 } from '../js/duel-gameplay.js';
@@ -23,6 +24,13 @@ test('Duel progress strips local sequence data and normalizes width', () => {
     baseW: 200, stack: [{ w: 80 }], cheated: false,
   };
   assert.equal(progressFromGame(game).widthRatio, .4);
+  assert.deepEqual(privateMultiplayerProgress({
+    score: 50, floors: 4, perfects: 4, maxCombo: 4, combo: 4,
+    widthRatio: .8, cheated: true,
+  }), {
+    score: 50, floors: 4, perfects: 4, maxCombo: 4, combo: 4,
+    widthRatio: .8, cheated: false,
+  });
 });
 
 test('win-secured only fires after the opponent finishes below the live score', () => {

@@ -333,8 +333,9 @@ with no Worker, the fallback phrase is `LOCAL_CHEAT_CODE` in
 [`js/leaderboard.js`](js/leaderboard.js), default `iddqd`.)
 
 **Open it:** on the title or game-over screen, tap the **“StackFall” title 5×**
-quickly — or press the **`` ` ``** (backtick) key on desktop. Enter the
-passphrase to reveal the menu.
+quickly. During a live Duel or Beat My Tower run, tap the existing **“You”**
+label in the multiplayer HUD 5×. The **`` ` ``** (backtick) key works on desktop
+in either case. Enter the passphrase to reveal the menu.
 
 **Cheats available:** Auto-Perfect, Easy Perfect Window, No Shrink, Invincible
 (a miss won't end the run), Slow Motion (0.5×/0.25×), Score Multiplier
@@ -350,6 +351,12 @@ A red **CHEATS ON** badge shows while any cheat is engaged.
   `wrangler.toml` (`"1"` = block, default; `"0"` = allow cheated scores onto the
   global board). Cheated runs always still appear on the player's local
   **"Your Best Runs"** board.
+- **Friend multiplayer deliberately treats cheat use as private local state.**
+  Duel and Beat My Tower send the resulting score/progress but not the local
+  `cheated` flag, so the opponent sees no cheat badge, warning, or special
+  disqualification reason. The red badge and secret menu exist only on the
+  passphrase owner's device. Unusually strong progress can still be inferred
+  by a friend; this is a playful trust-model exception, not hidden cryptography.
 
 ## Share button
 

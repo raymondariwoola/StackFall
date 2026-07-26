@@ -7,6 +7,8 @@
 //
 // A run that engages any cheat is flagged `cheated` and the Worker keeps it off
 // the global leaderboard (BLOCK_CHEATED=1). Local history still records it.
+// Friend multiplayer preserves this state locally but deliberately removes it
+// at that mode's documented protocol boundary.
 
 export const Cheats = {
   unlocked: false,       // passphrase accepted this session

@@ -30,6 +30,7 @@ import {
   estimateServerOffset,
   hasSecuredWin,
   opponentSeat,
+  privateMultiplayerProgress,
   progressFromGame,
 } from './duel-gameplay.js';
 import {
@@ -895,7 +896,7 @@ const game = new Game({
   callbacks: {
     onProgress: (progress) => {
       if (!duelRound || !duelRound.started || duelRound.finished) return;
-      duelRound.progress = duelProgress(progress);
+      duelRound.progress = privateMultiplayerProgress(progress);
       renderDuelHud(duelRound.progress);
       if (duelRound.kind !== 'beat'){
         try { multiplayer.progress(duelRound.progress); } catch (error) { /* final payload catches up after reconnect */ }
@@ -911,7 +912,7 @@ const game = new Game({
       if (runContext.active && [RUN_MODES.DUEL, RUN_MODES.BEAT].includes(runContext.active.mode)){
         const friendMode = runContext.active.mode;
         runContext.complete();
-        finishDuelLocally(progressFromGame(game));
+        finishDuelLocally(privateMultiplayerProgress(progressFromGame(game)));
         paused = false;
         ui.hidePause();
         ui.setPauseButtonVisible(false);
@@ -1000,7 +1001,7 @@ const cheatMenu = new CheatMenu({
   game,
   onOpen: () => { game.paused = true; },
   onClose: () => { game.paused = paused; },
-  canOpen: () => !duelOpen && !duelRound,
+  canOpen: () => !duelOpen,
 });
 
 // Share the last run: a Canvas-rendered result card via the Web Share API when

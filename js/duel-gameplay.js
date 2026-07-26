@@ -28,6 +28,13 @@ export function duelProgress(source = {}){
   };
 }
 
+// Cheat state is a local-only part of the owner's private game session in
+// friend modes. The opponent still receives the resulting score/progress, but
+// never a protocol flag or special result reason that announces cheat use.
+export function privateMultiplayerProgress(source = {}){
+  return { ...duelProgress(source), cheated: false };
+}
+
 export function progressFromGame(game){
   const top = game && game.stack && game.stack.length ? game.stack[game.stack.length - 1] : null;
   return duelProgress({

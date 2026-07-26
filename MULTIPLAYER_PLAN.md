@@ -1,7 +1,7 @@
 # StackFall Two-Player Multiplayer Plan
 
-Status: implementation in progress · Prepared: 2026-07-25 · Phases 0–2
-completed: 2026-07-25
+Status: Phases 0–5 implemented and deployed · Prepared: 2026-07-25 · Last
+reviewed: 2026-07-26
 
 ## Decision
 
@@ -55,14 +55,16 @@ Important existing constraints:
   seed**, not identical physics playback.
 - Rotation/resizing during a run does not rescale the existing tower. This
   should be fixed before Duel is called complete.
-- Pause, settings, tab backgrounding, and the hidden cheat menu need Duel-specific
-  rules.
+- Pause, settings, tab backgrounding, and the hidden cheat menu need
+  Duel-specific rules. The implemented family-and-friends policy keeps normal
+  pause/settings restrictions while allowing the passphrase owner to use a
+  private, local-only cheat path.
 - There is no committed automated test suite or CI workflow.
 - Documentation has some drift: the README describes Cloudflare Pages while
   the CORS/audit configuration points at GitHub Pages; the audit says cheated
   scores are blocked while `wrangler.toml` currently sets `BLOCK_CHEATED = "0"`.
-  Duel must enforce its own cheat rule rather than relying on leaderboard
-  configuration.
+  Multiplayer must enforce its own explicit cheat policy rather than relying on
+  leaderboard configuration.
 
 ## Player Experience
 
@@ -258,8 +260,10 @@ For the first release:
 - the server owns room membership, difficulty, seed, countdown, lifecycle, and
   final comparison;
 - clients report their own progress and results;
-- Duel clears all cheat state before start, disables opening the cheat menu,
-  and rejects/forfeits any result marked `cheated`;
+- the official client resets carried cheat effects at round start, but the
+  passphrase owner can privately reopen the same menu during friend play. Cheat
+  state stays local and outbound progress deliberately carries `cheated:false`,
+  so opponents receive ordinary score/progress and ordinary result reasons;
 - disable manual Pause and Settings during active Duel play;
 - backgrounding or connection loss starts a 30-second grace period, then becomes
   a forfeit;
@@ -478,7 +482,8 @@ Work:
 
 - lock difficulty and server seed into Duel's `RunContext`;
 - implement ready check and server-time-based countdown;
-- clear/disable cheats and disable Pause/Settings while the duel is active;
+- reset carried cheats at round start, retain the private passphrase trigger,
+  and disable ordinary Pause/Settings while the duel is active;
 - send progress after each landing and final stats on game over;
 - add the opponent HUD and accessible announcements;
 - implement result comparison, early “win secured,” rematch voting, and forfeit;
@@ -507,8 +512,13 @@ Phase 3 result:
 - the live HUD shows both scores/floors, opponent-finished state, and reconnect
   state without intercepting tower input; progress is sent only after resolved
   landings, never per frame;
-- active Duel rounds clear and disable cheats, Pause, Settings, and automatic
-  background pausing while leaving sound and local controls responsive;
+- active Duel rounds reset carried cheats but allow the passphrase owner to
+  reopen the private menu from the existing “You” HUD label; Pause, Settings,
+  and automatic background pausing remain disabled while sound and local
+  controls stay responsive;
+- multiplayer progress conceals the local cheat flag before both live and
+  delayed submission. The opponent receives only resulting gameplay stats and
+  never a badge, warning, or cheat-specific result reason;
 - game over sends final stats, waits for the server-owned result, and supports
   win/loss/draw/cheat/disconnect/leave explanations, two-sided rematch voting,
   and an explicit in-game forfeit;

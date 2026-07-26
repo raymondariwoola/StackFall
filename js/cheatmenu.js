@@ -1,8 +1,10 @@
 // Secret cheat menu: a hidden trigger opens a passphrase gate (verified by the
 // Worker), which unlocks a panel of toggles. Writes into the shared Cheats
-// state that game.js reads. Runs are still submitted to the leaderboard.
+// state that game.js reads. Single-player submissions remain marked; friend
+// multiplayer applies its documented private-state policy at its protocol edge.
 //
-// Trigger: tap the "StackFall" title 5× quickly, or press the ` (backquote) key.
+// Trigger: tap the "StackFall" title (or multiplayer "You" label) 5× quickly,
+// or press the ` (backquote) key.
 
 import { Cheats } from './cheats.js';
 import { verifyCheat } from './leaderboard.js';
@@ -26,6 +28,7 @@ export class CheatMenu {
     this.titles = [
       document.querySelector('.panel h1'),
       document.getElementById('pause-title'),
+      document.querySelector('#duel-hud .duel-hud-player.me span'),
     ].filter(Boolean);
 
     this._taps = 0;

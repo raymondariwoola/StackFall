@@ -7,6 +7,30 @@ GitHub Pages/Worker deployment shape visible in this repository. This is a
 static code audit; production behavior, DNS, deployed Worker variables, KV
 contents, and real-device behavior were not directly inspected.
 
+## Private multiplayer cheat mode (2026-07-26)
+
+The existing passphrase-gated cheat menu is now intentionally available during
+live Duel and Beat My Tower runs. Desktop retains the backtick trigger; mobile
+uses five quick taps on the existing “You” label in the multiplayer HUD. A
+round still resets carried cheat effects before it starts, so enabling cheats
+requires the private trigger after the multiplayer run begins.
+
+This is a deliberate family-and-friends trust-model exception. The official
+client keeps the local `game.cheated` state and red badge on the passphrase
+owner's device, but normalizes outbound multiplayer progress to
+`cheated:false`. The Worker therefore compares the resulting score and stats
+normally, and the opponent receives no cheat flag, warning, badge, or special
+disqualification reason. The Worker continues rejecting `cheated:true` from
+custom or stale clients as a defensive fallback. Single-player leaderboard
+blocking remains unchanged.
+
+Validation on 2026-07-26: root tests pass 58/58; all three Playwright scenarios
+pass against local Wrangler, including a two-browser assertion that the guest's
+live `opponent_progress` contains no `cheated` property; and the Worker deploy
+dry-run resolves every production binding. A single deliberately wrong-code
+probe returned HTTP 401, confirming that the deployed Worker has `CHEAT_CODE`
+configured without exposing or changing the secret.
+
 ## Multiplayer Phase 5 Beat My Tower (2026-07-25)
 
 Phase 5 is complete locally. Asynchronous challenges are isolated in a new
@@ -87,8 +111,10 @@ stay local. The browser sends one validated progress message per landed floor
 and one final payload at game over; there is no frame-level network traffic.
 
 The live Duel HUD shows both scores, floors, opponent finish, and reconnect
-state. Cheats, Pause, Settings, and automatic visibility pausing are disabled
-for an active Duel. The Worker remains authoritative for win/loss/draw and
+state. At the original Phase 3 checkpoint, Cheats, Pause, Settings, and
+automatic visibility pausing were disabled for an active Duel; the later
+private-cheat exception above changed only the passphrase-controlled cheat
+path. The Worker remains authoritative for win/loss/draw and
 forfeit reasons. Results support accessible announcements, early win-secured
 feedback, two-player rematch voting, and explicit forfeit. Duel runs are kept
 as labelled local history only and never enter existing personal-best,
