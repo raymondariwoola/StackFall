@@ -11,9 +11,10 @@ contents, and real-device behavior were not directly inspected.
 
 The existing passphrase-gated cheat menu is now intentionally available during
 live Duel and Beat My Tower runs. Desktop retains the backtick trigger; mobile
-uses five quick taps on the existing “You” label in the multiplayer HUD. A
-round still resets carried cheat effects before it starts, so enabling cheats
-requires the private trigger after the multiplayer run begins.
+uses five quick taps on the existing “You” label in the multiplayer HUD. Cheats
+intentionally armed on the title screen now remain active through room setup,
+countdown, gameplay, and rematches; **Exit Cheats** remains the explicit way to
+clear them. This avoids a mid-countdown setup scramble in Hardcore mode.
 
 This is a deliberate family-and-friends trust-model exception. The official
 client keeps the local `game.cheated` state and red badge on the passphrase
@@ -24,12 +25,14 @@ disqualification reason. The Worker continues rejecting `cheated:true` from
 custom or stale clients as a defensive fallback. Single-player leaderboard
 blocking remains unchanged.
 
-Validation on 2026-07-26: root tests pass 58/58; all four Playwright scenarios
+Validation on 2026-07-26: root tests pass 59/59; all four Playwright scenarios
 pass against local Wrangler, including a two-browser assertion that the guest's
 live `opponent_progress` contains no `cheated` property and an autofill
 regression proving a password-manager username cannot overwrite the saved
 player name. The cheat credentials now live in an isolated semantic form, and
 the UI snapshots and restores the player name while that form is open. The
+result model uses tested score-gap tiers for increasingly provocative rivalry
+copy while retaining factual disconnect, forfeit, and disqualification text. The
 Worker deploy dry-run resolves every production binding. A single deliberately
 wrong-code probe returned HTTP 401, confirming that the deployed Worker has
 `CHEAT_CODE` configured without exposing or changing the secret.

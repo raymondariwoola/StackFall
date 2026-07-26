@@ -53,6 +53,22 @@ test('result model is seat-relative and explains forfeits', () => {
   assert.equal(resultModel(room, 'host').opponentRematch, true);
 });
 
+test('competitive result copy escalates with the score gap', () => {
+  const room = (hostScore, guestScore, winner = 'host') => ({
+    result: { winner, reason: winner ? 'score' : 'draw' },
+    seats: {
+      host: { name: 'Raymond', progress: { score: hostScore, floors: 5 } },
+      guest: { name: 'Rival', progress: { score: guestScore, floors: 5 } },
+    },
+  });
+
+  assert.equal(resultModel(room(100, 99), 'host').title, 'Clutch Victory!');
+  assert.equal(resultModel(room(100, 80), 'guest').title, 'Outplayed.');
+  assert.equal(resultModel(room(100, 55), 'guest').title, 'You Got Cooked');
+  assert.equal(resultModel(room(100, 20), 'guest').title, 'Public Demolition');
+  assert.equal(resultModel(room(100, 100, null), 'host').title, 'Dead Even');
+});
+
 test('countdown uses the measured server clock offset', () => {
   assert.equal(estimateServerOffset(1_050, 1_000, 1_100), 0);
   assert.equal(estimateServerOffset(10_050, 5_000, 5_100), 5_000);

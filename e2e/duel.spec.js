@@ -60,6 +60,15 @@ test('two isolated players can forfeit and rematch on one shared seed', async ({
       await route.fulfill({ status: 200, contentType: 'application/json', body: '{"ok":true}' });
     });
     await host.goto('/');
+    for (let tap = 0; tap < 5; tap++) await host.locator('#panel-title').click();
+    await expect(host.locator('#cheat-overlay')).toHaveClass(/show/);
+    await host.locator('#cheat-code').fill('e2e-multiplayer-secret');
+    await host.locator('#cheat-unlock').click();
+    await expect(host.locator('#cheat-menu')).toBeVisible();
+    await host.locator('[data-cheat="autoPerfect"]').check();
+    await host.locator('#cheat-resume').click();
+    await expect(host.locator('#cheat-badge')).toBeVisible();
+
     await host.locator('#challenge-btn').click();
     await expect(host.locator('#duel-room-code')).toBeVisible();
     const code = (await host.locator('#duel-room-code').textContent()).trim();
@@ -79,14 +88,6 @@ test('two isolated players can forfeit and rematch on one shared seed', async ({
     await expect(guest.locator('#duel-hud')).toBeVisible({ timeout: 10_000 });
     await expect(host.locator('#settings-btn')).toBeHidden();
     await expect(host.locator('#pause-btn')).toBeHidden();
-
-    for (let tap = 0; tap < 5; tap++) await host.locator('#duel-hud .me span').click();
-    await expect(host.locator('#cheat-overlay')).toHaveClass(/show/);
-    await host.locator('#cheat-code').fill('e2e-multiplayer-secret');
-    await host.locator('#cheat-unlock').click();
-    await expect(host.locator('#cheat-menu')).toBeVisible();
-    await host.locator('[data-cheat="autoPerfect"]').check();
-    await host.locator('#cheat-resume').click();
     await expect(host.locator('#cheat-badge')).toBeVisible();
     await host.locator('#game-wrap').click({ position: { x: 195, y: 420 } });
     await expect.poll(() => guestMessages.filter((message) => message.type === 'opponent_progress').length).toBeGreaterThan(0);
@@ -106,6 +107,7 @@ test('two isolated players can forfeit and rematch on one shared seed', async ({
     await guest.locator('#duel-rematch').click();
     await expect(host.locator('#duel-countdown')).toBeVisible();
     await expect(host.locator('#duel-hud')).toBeVisible({ timeout: 10_000 });
+    await expect(host.locator('#cheat-badge')).toBeVisible();
 
     const hostCountdowns = hostMessages.filter((message) => message.type === 'countdown');
     const guestCountdowns = guestMessages.filter((message) => message.type === 'countdown');
@@ -184,7 +186,7 @@ test('Beat My Tower can be claimed and completed later on the same seed', async 
     expect(guestFinish.status).toBe(200);
     expect(guestFinish.body.challenge.result.winner).toBe('guest');
     await guest.reload();
-    await expect(guest.locator('#duel-title')).toHaveText('You Win!');
+    await expect(guest.locator('#duel-title')).toHaveText('Easy Work.');
     await expect(guest.locator('#duel-rematch')).toBeHidden();
     await expect(guest.locator('#duel-result-my-score')).toHaveText('21');
     await expect(guest.locator('#duel-result-opponent-score')).toHaveText('18');

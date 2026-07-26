@@ -128,6 +128,8 @@ account. Ready up in both tabs: they receive the same seed and server-time
 countdown, then play independently while the compact race HUD updates after
 each landing. Finish both towers to see the authoritative result, vote for a
 rematch from both result panels, or use **Forfeit** during a live round.
+Score-based results use escalating rivalry copy: close finishes stay playful,
+while decisive gaps earn progressively harsher winner and loser taunts.
 
 For an asynchronous challenge, choose **Beat My Tower · Play Later**, finish
 your seeded tower, then share the generated seven-day link. The first friend to
@@ -344,7 +346,9 @@ A red **CHEATS ON** badge shows while any cheat is engaged.
 
 - **Close** keeps your cheats on across runs; **Exit Cheats** turns everything
   off. The passphrase is remembered for the browser session, so you only enter
-  it once.
+  it once. This includes Duel and Beat My Tower: cheats armed on the title
+  screen remain active through the lobby and countdown, so Hardcore players do
+  not need to reopen the menu after the timer starts.
 - **Cheated runs are kept off the global board by default.** A run is flagged
   the moment any cheat is engaged; the client sends `cheated: true` on `/score`
   and the Worker skips the KV write. Flip it with the **`BLOCK_CHEATED`** var in

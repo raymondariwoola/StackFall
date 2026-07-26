@@ -155,7 +155,6 @@ function setDuelControls(active){
     ui.hidePause();
     ui.hideSettings();
     paused = false;
-    Cheats.reset();
   }
 }
 
@@ -244,7 +243,6 @@ function startPreparedDuel(){
     duel: { code: duelRound.code, seat: duelRound.seat, round: duelRound.round },
   });
   Difficulty.set(activeRun.difficulty);
-  Cheats.reset();
   cheatMenu.syncControls();
   cheatMenu.updateBadge();
   ui.setScore(0);

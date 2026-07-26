@@ -54,6 +54,31 @@ export function hasSecuredWin(own, opponent, opponentFinished){
   return !!(opponentFinished && own && opponent && own.score > opponent.score);
 }
 
+function competitiveTaunt({ won, opponentName, ownScore, opponentScore }){
+  const margin = Math.abs(ownScore - opponentScore);
+  const winningScore = Math.max(ownScore, opponentScore, 1);
+  const marginRatio = margin / winningScore;
+
+  if (margin <= 2 || marginRatio < .1){
+    return won
+      ? { title: 'Clutch Victory!', detail: `${opponentName} was one clean drop from stealing that. Breathe.` }
+      : { title: 'Painfully Close', detail: `${opponentName} barely escaped. One cleaner drop and they were finished.` };
+  }
+  if (margin <= 8 || marginRatio < .3){
+    return won
+      ? { title: 'Easy Work.', detail: `A comfortable win. ${opponentName} can blame lag if it helps them sleep.` }
+      : { title: 'Outplayed.', detail: `${opponentName} beat you cleanly. Start preparing better excuses.` };
+  }
+  if (marginRatio < .6){
+    return won
+      ? { title: 'You Cooked Them', detail: `${opponentName} just became the tutorial. That rematch button is pure optimism.` }
+      : { title: 'You Got Cooked', detail: `${opponentName} used you as a warm-up. Even the tower looked embarrassed.` };
+  }
+  return won
+    ? { title: 'Absolute Demolition', detail: `${opponentName}'s score needs a search party. Maybe offer them Practice mode.` }
+    : { title: 'Public Demolition', detail: `${opponentName} erased your tower and your bragging rights. Practice mode is right there.` };
+}
+
 export function resultModel(room, seat){
   const result = room && room.result || {};
   const winner = result.winner;
@@ -63,27 +88,42 @@ export function resultModel(room, seat){
   const won = winner === seat;
   const draw = winner == null;
   const reason = result.reason || 'score';
-  let title = draw ? 'Draw Game' : won ? 'You Win!' : 'Good Duel';
-  let detail = draw
-    ? 'You built matching towers.'
-    : won
-      ? `You edged out ${other && other.name || 'your opponent'}.`
-      : `${other && other.name || 'Your opponent'} takes this round.`;
+  const opponentName = other && other.name || 'Your opponent';
+  const ownProgress = duelProgress(own && own.progress);
+  const opponentProgress = duelProgress(other && other.progress);
+  const competitiveCopy = competitiveTaunt({
+    won,
+    opponentName,
+    ownScore: ownProgress.score,
+    opponentScore: opponentProgress.score,
+  });
+  let title = draw ? 'Dead Even' : competitiveCopy.title;
+  let detail = draw ? 'A perfect deadlock. Neither of you gets bragging rights.' : competitiveCopy.detail;
 
-  if (reason === 'left') detail = won ? 'Your opponent forfeited the round.' : 'You forfeited the round.';
-  else if (reason === 'disconnect') detail = won ? 'Your opponent did not reconnect in time.' : 'Your reconnect window expired.';
-  else if (reason === 'cheated') detail = won ? 'Your opponent was disqualified.' : 'This round was forfeited because cheats were detected.';
-  else if (reason === 'both_disconnected') detail = 'Neither player reconnected in time.';
-  else if (reason === 'draw') detail = 'Score, floors, perfects, and best combo all matched.';
+  if (reason === 'left'){
+    title = won ? 'You Win!' : 'Good Duel';
+    detail = won ? 'Your opponent forfeited the round.' : 'You forfeited the round.';
+  } else if (reason === 'disconnect'){
+    title = won ? 'You Win!' : 'Connection Lost';
+    detail = won ? 'Your opponent did not reconnect in time.' : 'Your reconnect window expired.';
+  } else if (reason === 'cheated'){
+    title = won ? 'You Win!' : 'Round Forfeited';
+    detail = won ? 'Your opponent was disqualified.' : 'This round was forfeited because cheats were detected.';
+  } else if (reason === 'both_disconnected'){
+    title = 'Round Abandoned';
+    detail = 'Neither player reconnected in time.';
+  } else if (reason === 'draw'){
+    detail = 'Score, floors, perfects, and best combo all matched. Settle it with a rematch.';
+  }
 
   return {
     title,
     detail,
     tone: draw ? 'draw' : won ? 'win' : 'loss',
     ownName: own && own.name || 'You',
-    opponentName: other && other.name || 'Opponent',
-    ownProgress: duelProgress(own && own.progress),
-    opponentProgress: duelProgress(other && other.progress),
+    opponentName,
+    ownProgress,
+    opponentProgress,
     ownRematch: !!(own && own.rematch),
     opponentRematch: !!(other && other.rematch),
   };

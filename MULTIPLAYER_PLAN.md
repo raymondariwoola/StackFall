@@ -260,10 +260,11 @@ For the first release:
 - the server owns room membership, difficulty, seed, countdown, lifecycle, and
   final comparison;
 - clients report their own progress and results;
-- the official client resets carried cheat effects at round start, but the
-  passphrase owner can privately reopen the same menu during friend play. Cheat
-  state stays local and outbound progress deliberately carries `cheated:false`,
-  so opponents receive ordinary score/progress and ordinary result reasons;
+- the official client preserves cheats intentionally armed before room setup,
+  and the passphrase owner can privately reopen the same menu during friend
+  play. Cheat state stays local and outbound progress deliberately carries
+  `cheated:false`, so opponents receive ordinary score/progress and ordinary
+  result reasons;
 - disable manual Pause and Settings during active Duel play;
 - backgrounding or connection loss starts a 30-second grace period, then becomes
   a forfeit;
@@ -482,8 +483,8 @@ Work:
 
 - lock difficulty and server seed into Duel's `RunContext`;
 - implement ready check and server-time-based countdown;
-- reset carried cheats at round start, retain the private passphrase trigger,
-  and disable ordinary Pause/Settings while the duel is active;
+- preserve intentionally armed cheats through countdown, retain the private
+  passphrase trigger, and disable ordinary Pause/Settings while the duel is active;
 - send progress after each landing and final stats on game over;
 - add the opponent HUD and accessible announcements;
 - implement result comparison, early “win secured,” rematch voting, and forfeit;
@@ -512,7 +513,7 @@ Phase 3 result:
 - the live HUD shows both scores/floors, opponent-finished state, and reconnect
   state without intercepting tower input; progress is sent only after resolved
   landings, never per frame;
-- active Duel rounds reset carried cheats but allow the passphrase owner to
+- active Duel rounds preserve pre-armed cheats and allow the passphrase owner to
   reopen the private menu from the existing “You” HUD label; Pause, Settings,
   and automatic background pausing remain disabled while sound and local
   controls stay responsive;
