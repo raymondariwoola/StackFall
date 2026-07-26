@@ -523,6 +523,9 @@ Phase 3 result:
 - game over sends final stats, waits for the server-owned result, and supports
   win/loss/draw/cheat/disconnect/leave explanations, two-sided rematch voting,
   and an explicit in-game forfeit;
+- completed live and delayed results can render a branded portrait PNG locally,
+  share it as a native image file, or save it directly without exposing the
+  room code or either seat capability;
 - Duel runs appear as labelled entries in the local Runs history but do not set
   single-player records and never enter global or daily submission paths;
 - reconnect keeps an in-progress local round alive, refreshes opponent state,

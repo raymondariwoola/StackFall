@@ -19,7 +19,7 @@ import { Cheats } from './cheats.js';
 import { CheatMenu } from './cheatmenu.js';
 import { announce, trapFocus, prefersReducedMotion } from './a11y.js';
 import { Difficulty } from './difficulty.js';
-import { buildShareCard } from './sharecard.js';
+import { buildDuelShareCard, buildShareCard } from './sharecard.js';
 import { evaluateAchievements } from './achievements.js';
 import { RunContext, RUN_MODES } from './run-context.js';
 import { DuelUI, duelErrorText } from './duel-ui.js';
@@ -32,6 +32,7 @@ import {
   opponentSeat,
   privateMultiplayerProgress,
   progressFromGame,
+  resultModel,
 } from './duel-gameplay.js';
 import {
   MultiplayerClient,
@@ -629,6 +630,108 @@ async function shareChallenge(){
   await copyDuelText(`${text} ${url}`, duelUI.shareBtn);
 }
 
+function duelResultCardData(){
+  const room = duelUI.room;
+  const session = duelUI.session || duelSession();
+  if (!room || !session) return null;
+  return {
+    ...resultModel(room, session.seat),
+    difficulty: room.difficulty === 'hardcore' ? 'hardcore' : 'normal',
+    round: room.round || 1,
+    kind: room.kind === 'beat' ? 'beat' : 'live',
+  };
+}
+
+async function duelResultFile(){
+  const card = duelResultCardData();
+  if (!card) return null;
+  try { await document.fonts?.ready; } catch (error){ /* fallback fonts are fine */ }
+  const blob = await buildDuelShareCard(card);
+  if (!blob) return null;
+  const code = String(duelUI.room?.code || 'result').replace(/[^a-z0-9-]/gi, '').toLowerCase();
+  return { card, file: new File([blob], `stackfall-duel-${code || 'result'}.png`, { type: 'image/png' }) };
+}
+
+function saveDuelFile(file, button = duelUI.resultSaveBtn){
+  const href = URL.createObjectURL(file);
+  const anchor = document.createElement('a');
+  anchor.href = href;
+  anchor.download = file.name;
+  document.body.appendChild(anchor);
+  anchor.click();
+  anchor.remove();
+  setTimeout(() => URL.revokeObjectURL(href), 4000);
+  duelUI.flash(button, 'Image Saved ✓');
+}
+
+function beginDuelCardAction(button){
+  const label = button.textContent;
+  button.textContent = 'Creating…';
+  button.disabled = true;
+  return () => {
+    button.textContent = label;
+    button.disabled = false;
+  };
+}
+
+async function saveDuelResult(){
+  const restoreButton = beginDuelCardAction(duelUI.resultSaveBtn);
+  try {
+    const result = await duelResultFile();
+    if (!result) throw new Error('card unavailable');
+    restoreButton();
+    saveDuelFile(result.file);
+  } catch (error){
+    restoreButton();
+    duelUI.flash(duelUI.resultSaveBtn, 'Could Not Save');
+  }
+}
+
+async function shareDuelResult(){
+  const restoreButton = beginDuelCardAction(duelUI.resultShareBtn);
+  try {
+    const result = await duelResultFile();
+    if (!result) throw new Error('card unavailable');
+    const { card, file } = result;
+    const text = `${card.title} — ${card.ownName} ${card.ownProgress.score} vs ${card.opponentName} ${card.opponentProgress.score} in StackFall.`;
+    const url = new URL(location.href);
+    url.search = '';
+    url.hash = '';
+
+    if (navigator.share && navigator.canShare && navigator.canShare({ files: [file] })){
+      try {
+        await navigator.share({ title: 'StackFall Duel Result', text, url: url.href, files: [file] });
+        restoreButton();
+        duelUI.flash(duelUI.resultShareBtn, 'Shared ✓');
+        return;
+      } catch (error){
+        if (error && error.name === 'AbortError'){
+          restoreButton();
+          return;
+        }
+      }
+    }
+
+    // Browsers without file sharing still get the actual PNG rather than a
+    // misleading text-only share. It can be attached to email/WhatsApp or
+    // saved to the device from the browser's download UI.
+    restoreButton();
+    saveDuelFile(file, duelUI.resultShareBtn);
+  } catch (error){
+    restoreButton();
+    const card = duelResultCardData();
+    const fallback = card
+      ? `${card.title} — ${card.ownName} ${card.ownProgress.score} vs ${card.opponentName} ${card.opponentProgress.score} in StackFall.`
+      : 'StackFall Duel complete.';
+    try {
+      await navigator.clipboard.writeText(fallback);
+      duelUI.flash(duelUI.resultShareBtn, 'Result Copied ✓');
+    } catch (clipboardError){
+      duelUI.flash(duelUI.resultShareBtn, 'Share Unavailable');
+    }
+  }
+}
+
 duelUI.setCallbacks({
   close: () => {
     if (duelRound){
@@ -659,6 +762,8 @@ duelUI.setCallbacks({
     } catch (error){ showDuelError(error, 'Reconnect'); }
   },
   share: shareChallenge,
+  shareResult: shareDuelResult,
+  saveResult: saveDuelResult,
   copyLink: () => copyDuelText(challengeLink(), duelUI.copyLinkBtn),
   copyCode: () => copyDuelText((duelUI.room || multiplayer.room).code, duelUI.copyCodeBtn),
   leave: async () => {

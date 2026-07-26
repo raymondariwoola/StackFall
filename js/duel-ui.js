@@ -104,6 +104,8 @@ export class DuelUI {
     this.resultOpponentName = root.querySelector('#duel-result-opponent-name');
     this.resultOpponentScore = root.querySelector('#duel-result-opponent-score');
     this.resultOpponentFloors = root.querySelector('#duel-result-opponent-floors');
+    this.resultShareBtn = root.querySelector('#duel-result-share');
+    this.resultSaveBtn = root.querySelector('#duel-result-save');
     this.rematchBtn = root.querySelector('#duel-rematch');
     this.rematchNote = root.querySelector('#duel-rematch-note');
     this.resultExitBtn = root.querySelector('#duel-result-exit');
@@ -144,6 +146,8 @@ export class DuelUI {
     this.readyBtn.addEventListener('click', () => this.callbacks.ready?.());
     this.leaveBtn.addEventListener('click', () => this.callbacks.leave?.());
     this.errorAction.addEventListener('click', () => this.callbacks.retry?.());
+    this.resultShareBtn.addEventListener('click', () => this.callbacks.shareResult?.());
+    this.resultSaveBtn.addEventListener('click', () => this.callbacks.saveResult?.());
     this.rematchBtn.addEventListener('click', () => this.callbacks.rematch?.());
     this.resultExitBtn.addEventListener('click', () => this.callbacks.resultExit?.());
     this.forfeitBtn.addEventListener('click', (event) => {

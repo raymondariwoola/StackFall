@@ -31,6 +31,7 @@ StackFall/
 │   ├── beat-challenge.js # asynchronous seeded challenge client
 │   ├── duel-gameplay.js  # pure Duel progress/countdown/result helpers
 │   ├── duel-ui.js        # challenge, lobby, live HUD, and result presentation
+│   ├── sharecard.js      # solo + multiplayer Canvas PNG result cards
 │   ├── ui.js             # HUD + overlay DOM
 │   └── leaderboard.js    # Worker client (set WORKER_URL here)
 ├── shared/               # versioned browser/Worker multiplayer contracts
@@ -130,6 +131,12 @@ each landing. Finish both towers to see the authoritative result, vote for a
 rematch from both result panels, or use **Forfeit** during a live round.
 Score-based results use escalating rivalry copy: close finishes stay playful,
 while decisive gaps earn progressively harsher winner and loser taunts.
+Every completed Duel or Beat My Tower result also offers **Share Result** and
+**Save Image**. StackFall renders a 1080×1350 portrait PNG locally with the
+taunt, both names/scores/floors, difficulty, and round. Phones attach it to the
+native share sheet for WhatsApp, email, Messages, or a gallery/files action;
+browsers without image sharing download the PNG instead. The card and share
+text contain no room capability or finished challenge code.
 
 For an asynchronous challenge, choose **Beat My Tower · Play Later**, finish
 your seeded tower, then share the generated seven-day link. The first friend to
@@ -368,6 +375,10 @@ After each run the game-over panel shows **Share Score**, which opens the native
 share sheet on mobile (`navigator.share`) or copies a "beat that" message + your
 site URL to the clipboard on desktop. In **Daily** mode the text calls out
 "today's board" to fuel the challenge loop.
+
+Multiplayer results use their own portrait card described above. **Share
+Result** prefers native PNG file sharing, while **Save Image** always downloads
+the card so it can be kept or attached manually.
 
 ---
 

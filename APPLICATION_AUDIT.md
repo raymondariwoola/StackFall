@@ -33,6 +33,11 @@ player name. The cheat credentials now live in an isolated semantic form, and
 the UI snapshots and restores the player name while that form is open. The
 result model uses tested score-gap tiers for increasingly provocative rivalry
 copy while retaining factual disconnect, forfeit, and disqualification text. The
+result view now renders a 1080×1350 PNG entirely in the browser. Native file
+sharing sends that card to WhatsApp/email/gallery-capable share targets; an
+explicit save action and unsupported-browser fallback download the same PNG.
+Cards include display names and results only after a user action, and omit room
+codes, seat capabilities, query strings, and other private multiplayer state. The
 Worker deploy dry-run resolves every production binding. A single deliberately
 wrong-code probe returned HTTP 401, confirming that the deployed Worker has
 `CHEAT_CODE` configured without exposing or changing the secret.

@@ -373,6 +373,8 @@ canvas{ display:block; width:100%; height:100%; position:relative; z-index:0; }
 .duel-result-scores span,.duel-result-scores small{ min-width:0; overflow:hidden; text-overflow:ellipsis; color:var(--ink-dim); font-size:9px; }
 .duel-result-scores strong{ color:var(--ink); font:700 25px 'Space Grotesk',sans-serif; }
 .duel-result-scores b{ color:var(--amber); font-size:10px; }
+.duel-result-actions{ display:grid; grid-template-columns:1fr 1fr; gap:8px; margin:0 0 11px; }
+.duel-result-actions .duel-secondary{ color:var(--ink); border-color:rgba(94,230,214,.28); background:rgba(94,230,214,.055); }
 
 @media (max-width: 420px){
   #duel-hud{ top:max(68px, calc(env(safe-area-inset-top) + 60px)); gap:5px; }

@@ -36,6 +36,68 @@ function chip(ctx, x, y, label, color){
   return w;
 }
 
+function fitFont(ctx, text, maxWidth, maxSize, minSize, weight = 700, family = '"Space Grotesk", sans-serif'){
+  let size = maxSize;
+  while (size > minSize){
+    ctx.font = `${weight} ${size}px ${family}`;
+    if (ctx.measureText(text).width <= maxWidth) break;
+    size -= 2;
+  }
+  return size;
+}
+
+function ellipsize(ctx, text, maxWidth){
+  const value = String(text || 'Player');
+  if (ctx.measureText(value).width <= maxWidth) return value;
+  let shortened = value;
+  while (shortened.length && ctx.measureText(`${shortened}…`).width > maxWidth) shortened = shortened.slice(0, -1);
+  return `${shortened}…`;
+}
+
+function wrappedLines(ctx, text, maxWidth, maxLines = 3){
+  const words = String(text || '').split(/\s+/).filter(Boolean);
+  const lines = [];
+  let line = '';
+  for (const word of words){
+    const next = line ? `${line} ${word}` : word;
+    if (!line || ctx.measureText(next).width <= maxWidth){
+      line = next;
+      continue;
+    }
+    lines.push(line);
+    line = word;
+    if (lines.length === maxLines - 1) break;
+  }
+  if (line && lines.length < maxLines) lines.push(line);
+  const consumed = lines.join(' ').split(/\s+/).filter(Boolean).length;
+  if (consumed < words.length && lines.length){
+    lines[lines.length - 1] = ellipsize(ctx, lines[lines.length - 1], maxWidth - 20);
+  }
+  return lines;
+}
+
+function duelScorePanel(ctx, { x, y, w, h, name, score, floors, color }){
+  roundRect(ctx, x, y, w, h, 26);
+  ctx.fillStyle = 'rgba(245,243,236,0.055)';
+  ctx.fill();
+  ctx.lineWidth = 2;
+  ctx.strokeStyle = 'rgba(245,243,236,0.15)';
+  ctx.stroke();
+
+  ctx.textAlign = 'center';
+  ctx.fillStyle = BRAND.dim;
+  ctx.font = '500 28px "IBM Plex Mono", monospace';
+  ctx.fillText(ellipsize(ctx, name, w - 52), x + w / 2, y + 49);
+
+  fitFont(ctx, String(score), w - 48, 86, 54);
+  ctx.fillStyle = color;
+  ctx.fillText(String(score), x + w / 2, y + 142);
+
+  ctx.fillStyle = BRAND.dim;
+  ctx.font = '500 26px "IBM Plex Mono", monospace';
+  ctx.fillText(`${floors} floors`, x + w / 2, y + h - 33);
+}
+
 // run: { score, floors, mode, difficulty, name, streak, date }
 export async function buildShareCard(run){
   const S = 1080;
@@ -118,4 +180,118 @@ export async function buildShareCard(run){
   ctx.fillText(run.date || '', S / 2, 1005);
 
   return await new Promise((resolve) => canvas.toBlob((b) => resolve(b), 'image/png'));
+}
+
+// result: { title, detail, tone, ownName, opponentName, ownProgress,
+// opponentProgress, difficulty, round, kind }
+export async function buildDuelShareCard(result){
+  const W = 1080, H = 1350;
+  const canvas = document.createElement('canvas');
+  canvas.width = W; canvas.height = H;
+  const ctx = canvas.getContext('2d');
+  if (!ctx) return null;
+
+  const tone = result.tone === 'loss' ? 'loss' : result.tone === 'draw' ? 'draw' : 'win';
+  const accent = tone === 'win' ? BRAND.cyan : tone === 'loss' ? BRAND.coral : BRAND.amber;
+  const own = result.ownProgress || {};
+  const opponent = result.opponentProgress || {};
+  const ownScore = Math.max(0, Math.trunc(own.score || 0));
+  const opponentScore = Math.max(0, Math.trunc(opponent.score || 0));
+  const ownFloors = Math.max(0, Math.trunc(own.floors || 0));
+  const opponentFloors = Math.max(0, Math.trunc(opponent.floors || 0));
+
+  const bg = ctx.createLinearGradient(0, 0, 0, H);
+  bg.addColorStop(0, '#0B1120');
+  bg.addColorStop(.52, BRAND.bgTop);
+  bg.addColorStop(1, '#171D38');
+  ctx.fillStyle = bg;
+  ctx.fillRect(0, 0, W, H);
+
+  const glow = ctx.createRadialGradient(W / 2, 330, 0, W / 2, 330, 620);
+  glow.addColorStop(0, `${accent}2E`);
+  glow.addColorStop(1, 'rgba(0,0,0,0)');
+  ctx.fillStyle = glow;
+  ctx.fillRect(0, 0, W, H);
+
+  roundRect(ctx, 55, 55, W - 110, H - 110, 42);
+  ctx.fillStyle = 'rgba(27,33,64,.78)';
+  ctx.fill();
+  ctx.lineWidth = 3;
+  ctx.strokeStyle = `${accent}66`;
+  ctx.stroke();
+
+  // Mini tower motif.
+  const blocks = [300, 250, 200];
+  blocks.forEach((width, index) => {
+    roundRect(ctx, W / 2 - width / 2 + index * 8, 120 + index * 38, width, 28, 7);
+    ctx.fillStyle = index === 0 ? BRAND.amber : index === 1 ? BRAND.cyan : BRAND.coral;
+    ctx.fill();
+  });
+
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'alphabetic';
+  ctx.fillStyle = BRAND.amber;
+  ctx.font = '700 27px "IBM Plex Mono", monospace';
+  ctx.fillText(result.kind === 'beat' ? 'B E A T   M Y   T O W E R' : 'T W O - P L A Y E R   D U E L', W / 2, 280);
+
+  const title = String(result.title || 'Duel Complete');
+  fitFont(ctx, title, 850, 88, 54);
+  const titleLines = wrappedLines(ctx, title, 850, 2);
+  ctx.fillStyle = BRAND.ink;
+  titleLines.forEach((line, index) => ctx.fillText(line, W / 2, 385 + index * 88));
+
+  const markY = titleLines.length > 1 ? 535 : 455;
+  ctx.beginPath();
+  ctx.arc(W / 2, markY, 47, 0, Math.PI * 2);
+  ctx.fillStyle = `${accent}16`;
+  ctx.fill();
+  ctx.lineWidth = 2;
+  ctx.strokeStyle = accent;
+  ctx.stroke();
+  ctx.fillStyle = accent;
+  ctx.font = '700 52px "Space Grotesk", sans-serif';
+  ctx.fillText(tone === 'win' ? '★' : tone === 'loss' ? '×' : '=', W / 2, markY + 18);
+
+  ctx.fillStyle = BRAND.dim;
+  ctx.font = '500 29px "IBM Plex Mono", monospace';
+  const detailLines = wrappedLines(ctx, result.detail, 830, 3);
+  const detailStart = markY + 92;
+  detailLines.forEach((line, index) => ctx.fillText(line, W / 2, detailStart + index * 42));
+
+  const panelsY = Math.max(700, detailStart + detailLines.length * 42 + 40);
+  duelScorePanel(ctx, {
+    x: 105, y: panelsY, w: 390, h: 230,
+    name: result.ownName || 'You', score: ownScore, floors: ownFloors,
+    color: tone === 'loss' ? BRAND.ink : accent,
+  });
+  ctx.fillStyle = BRAND.amber;
+  ctx.font = '700 28px "Space Grotesk", sans-serif';
+  ctx.fillText('VS', W / 2, panelsY + 124);
+  duelScorePanel(ctx, {
+    x: 585, y: panelsY, w: 390, h: 230,
+    name: result.opponentName || 'Opponent', score: opponentScore, floors: opponentFloors,
+    color: tone === 'loss' ? accent : BRAND.ink,
+  });
+
+  const diff = result.difficulty === 'hardcore' ? 'HARDCORE' : 'NORMAL';
+  const round = result.kind === 'beat' ? 'ASYNC CHALLENGE' : `ROUND ${Math.max(1, Math.trunc(result.round || 1))}`;
+  ctx.font = '600 27px "IBM Plex Mono", monospace';
+  const gap = 22;
+  const w1 = ctx.measureText(diff).width + 52;
+  const w2 = ctx.measureText(round).width + 52;
+  let chipX = W / 2 - (w1 + gap + w2) / 2;
+  chipX += chip(ctx, chipX, panelsY + 285, diff, result.difficulty === 'hardcore' ? BRAND.coral : BRAND.dim) + gap;
+  chip(ctx, chipX, panelsY + 285, round, BRAND.amber);
+
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'alphabetic';
+  ctx.fillStyle = BRAND.ink;
+  ctx.font = '700 38px "Space Grotesk", sans-serif';
+  ctx.fillText('STACKFALL', W / 2, 1190);
+  ctx.fillStyle = BRAND.dim;
+  ctx.font = '400 25px "IBM Plex Mono", monospace';
+  ctx.fillText('Build higher. Talk louder. Run it back.', W / 2, 1237);
+  ctx.fillText('raymondariwoola.github.io/StackFall', W / 2, 1282);
+
+  return await new Promise((resolve) => canvas.toBlob((blob) => resolve(blob), 'image/png'));
 }

@@ -1,4 +1,5 @@
 import { test, expect } from '@playwright/test';
+import { readFile } from 'node:fs/promises';
 
 function captureServerMessages(page, messages){
   page.on('websocket', (socket) => {
@@ -185,11 +186,50 @@ test('Beat My Tower can be claimed and completed later on the same seed', async 
     const guestFinish = await submitChallengeResult(guest, code, 21);
     expect(guestFinish.status).toBe(200);
     expect(guestFinish.body.challenge.result.winner).toBe('guest');
+    await guest.addInitScript(() => {
+      Object.defineProperty(navigator, 'canShare', {
+        configurable: true,
+        value: ({ files }) => Array.isArray(files) && files.length === 1 && files[0].type === 'image/png',
+      });
+      Object.defineProperty(navigator, 'share', {
+        configurable: true,
+        value: async (payload) => {
+          window.__duelSharePayload = {
+            fileName: payload.files?.[0]?.name,
+            fileType: payload.files?.[0]?.type,
+            fileSize: payload.files?.[0]?.size,
+            text: payload.text,
+            url: payload.url,
+          };
+        },
+      });
+    });
     await guest.reload();
     await expect(guest.locator('#duel-title')).toHaveText('Easy Work.');
     await expect(guest.locator('#duel-rematch')).toBeHidden();
     await expect(guest.locator('#duel-result-my-score')).toHaveText('21');
     await expect(guest.locator('#duel-result-opponent-score')).toHaveText('18');
+    await expect(guest.locator('#duel-result-share')).toBeVisible();
+    await expect(guest.locator('#duel-result-save')).toBeVisible();
+
+    await guest.locator('#duel-result-share').click();
+    await expect.poll(() => guest.evaluate(() => window.__duelSharePayload)).toBeTruthy();
+    const sharedPayload = await guest.evaluate(() => window.__duelSharePayload);
+    expect(sharedPayload.fileName).toMatch(/^stackfall-duel-[a-z0-9-]+\.png$/);
+    expect(sharedPayload.fileType).toBe('image/png');
+    expect(sharedPayload.fileSize).toBeGreaterThan(20_000);
+    expect(sharedPayload.text).toContain('Async Guest 21 vs Async Host 18');
+    expect(new URL(sharedPayload.url).search).toBe('');
+
+    const downloadPromise = guest.waitForEvent('download');
+    await guest.locator('#duel-result-save').click();
+    const download = await downloadPromise;
+    expect(download.suggestedFilename()).toMatch(/^stackfall-duel-[a-z0-9-]+\.png$/);
+    if (process.env.STACKFALL_CARD_PREVIEW) await download.saveAs(process.env.STACKFALL_CARD_PREVIEW);
+    const png = await readFile(await download.path());
+    expect(png.subarray(0, 8).toString('hex')).toBe('89504e470d0a1a0a');
+    expect(png.readUInt32BE(16)).toBe(1080);
+    expect(png.readUInt32BE(20)).toBe(1350);
   } finally {
     await Promise.all([hostContext.close(), guestContext.close()]);
   }
